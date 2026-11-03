@@ -1105,7 +1105,7 @@ td .block {
 .bar-chart .bar-name { font-size:11px;font-weight:700;color:#24435d;flex:0 0 195px;width:195px; }
 .bar-chart .bar-track { height:14px;border-radius:8px; }
 .bar-chart .bar-count { font-size:15px;min-width:35px;text-align:right;color:#173952; }
-.resumo-filtros {display:grid;grid-template-columns:repeat(2,minmax(200px,1fr));gap:15px;margin-bottom:14px;}
+.resumo-filtros {display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:15px;margin-bottom:16px;}
 .resumo-filtros label {font-weight:700;font-size:12px;color:#47637c;}
 .resumo-filtros input,.resumo-filtros select{display:block;margin-top:6px;}
 .aviso-corte {padding:13px 16px;border:1px solid #f1cf98;background:#fff8eb;color:#845112;font-size:12px;line-height:1.6;border-radius:8px;margin-bottom:18px;}
@@ -1156,6 +1156,272 @@ td .block {
   .enc-linha-folga .enc-dias {font-size:18px;}
 }
 
-/* V13 — faixa automática apenas informativa; sem seletores de mês. */
-.resumo-periodo-fixo {padding:11px 14px;margin-bottom:10px;border:1px solid #cbddea;border-radius:8px;color:#234563;font-size:14px;font-weight:700;line-height:1.5;}
+/* V12 — filtro real por mês e colunas fora da seleção. */
+.resumo-filtros input[type="month"] { min-height:44px; }
+.tabela-resumo-grupo td.mes-excluido {color:#a2acb7;background:#f6f7f9;font-size:19px;font-weight:700;}
 .resumo-filtros label {font-size:13px;}
+
+
+/* V19 — animação de carregamento nos botões com a logo já utilizada no site. */
+button.tm-carregando,
+.btn.tm-carregando:disabled,
+.logout.tm-carregando:disabled {
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+  cursor:progress;
+  opacity:1;
+  min-height:44px;
+  border-color:rgba(31,78,120,.28);
+  box-shadow:inset 0 -3px 0 rgba(31,78,120,.09);
+}
+button.tm-carregando .tm-carregando-texto {
+  display:block;
+  position:relative;
+  z-index:3;
+  font-weight:800;
+}
+button.tm-carregando .tm-logo-pista {
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:1;
+}
+button.tm-carregando .tm-logo-pista::before {
+  content:'';
+  position:absolute;
+  top:50%;
+  left:8px;
+  right:8px;
+  height:22px;
+  transform:translateY(-50%);
+  border-radius:999px;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.10),rgba(255,255,255,0));
+  opacity:.95;
+  animation:tm-pista 1.6s linear infinite;
+}
+button.tm-carregando .tm-logo-viagem {
+  position:absolute;
+  top:50%;
+  left:-72px;
+  width:64px;
+  height:30px;
+  transform:translateY(-50%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  animation:tm-logo-caminho 2.1s linear infinite;
+  will-change:left;
+  filter:drop-shadow(0 2px 6px rgba(0,25,60,.28));
+}
+button.tm-carregando .tm-logo-viagem img {
+  max-width:64px;
+  max-height:30px;
+  width:auto;
+  height:auto;
+  object-fit:contain;
+}
+button.tm-carregando .tm-logo-indisponivel::before {
+  content:'TM';
+  font-size:10px;
+  font-weight:900;
+  color:#fff;
+  background:#1f4e78;
+  padding:4px 8px;
+  border-radius:999px;
+}
+button.tm-carregando .tm-logo-indisponivel img {display:none}
+@keyframes tm-logo-caminho {
+  from {left:-72px}
+  to {left:calc(100% + 10px)}
+}
+@keyframes tm-pista {
+  from {opacity:.45;transform:translateY(-50%) scaleX(.96)}
+  50% {opacity:.95;transform:translateY(-50%) scaleX(1)}
+  to {opacity:.45;transform:translateY(-50%) scaleX(.96)}
+}
+.tm-feedback-atualizacao {
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  max-width:min(460px,calc(100vw - 32px));
+  z-index:1300;
+  padding:13px 18px;
+  border-radius:11px;
+  border:1px solid #bde7d8;
+  background:#f1fff9;
+  color:#087253;
+  box-shadow:0 10px 32px rgba(22,65,77,.16);
+  font-size:13px;
+  font-weight:700;
+  opacity:0;
+  transform:translateY(14px);
+  pointer-events:none;
+  transition:opacity .25s ease,transform .25s ease;
+}
+.tm-feedback-atualizacao.tm-feedback-visivel {opacity:1;transform:translateY(0)}
+.tm-feedback-atualizacao.tm-feedback-erro {
+  background:#fff5f5;
+  border-color:#edc7c7;
+  color:#a33737;
+}
+@media(max-width:620px) {
+  .tm-feedback-atualizacao {right:12px;bottom:12px;max-width:calc(100vw - 24px)}
+  #sec-cartas > .section-header .actions {width:100%}
+  #btn-atualizar-cartas {width:100%}
+}
+@media(prefers-reduced-motion:reduce) {
+  button.tm-carregando .tm-logo-viagem {animation:none;left:calc(50% - 32px)}
+  button.tm-carregando .tm-logo-pista::before {animation:none}
+  .tm-feedback-atualizacao {transition:none}
+}
+
+
+/* V21 — carta de ponto rápida, edição e ações com confirmação. */
+.carta-empresa-identificada {
+  margin:-2px 0 3px;
+  color:#14684d;
+  font-size:12px;
+  font-weight:650;
+  background:#ecfaf4;
+  border:1px solid #d8eee5;
+  border-radius:7px;
+  padding:9px 10px;
+}
+.carta-empresa-identificada.carta-empresa-aviso {color:#95511e;background:#fff7e9;border-color:#f1dfc5}
+.carta-dica-data {color:var(--muted);font-size:11px;line-height:1.4}
+.carta-form-acoes {display:flex;flex-wrap:wrap;gap:10px}
+.carta-form-acoes .btn {flex:1;min-width:145px}
+.carta-acoes {display:flex;gap:6px;flex-wrap:wrap;min-width:195px}
+.carta-acoes .carta-excluir {background:#fff0f0;border:1px solid #efc9c9;color:#ac3434}
+.carta-acoes .carta-excluir:hover {background:#fde1e1}
+@media(max-width:620px) {
+  .carta-form-acoes .btn {min-width:100%}
+  .carta-acoes {min-width:170px}
+}
+
+/* V22 — caixa de exclusão no padrão visual da aplicação. */
+.tm-modal-excluir {
+  border:1px solid rgba(218,226,234,.85);
+  border-radius:18px;
+  padding:32px 25px 26px;
+  width:min(94vw,430px);
+  max-width:430px;
+  color:var(--text);
+  background:var(--panel);
+  box-shadow:0 24px 80px rgba(9,32,56,.27);
+  text-align:center;
+}
+.tm-modal-excluir::backdrop {background:rgba(12,38,59,.62);backdrop-filter:blur(5px)}
+.tm-modal-excluir p {margin:0 0 27px;color:#253b51;font-size:17px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
+.tm-exclusao-acoes {display:flex;gap:10px;justify-content:center}
+.tm-exclusao-acoes .btn {min-width:125px;min-height:43px}
+.tm-btn-danger {background:#c94141;color:white;border:1px solid #bc3333}
+.tm-btn-danger:hover {background:#ad2e2e}
+.tm-btn-danger:focus-visible,.tm-exclusao-acoes .btn:focus-visible {outline:3px solid #96b6e4;outline-offset:3px}
+
+/* Sugestões de colaborador/responsável controladas pelo teclado. */
+.carta-campo-autocomplete > label {display:block;font-weight:650;color:#4d5c6b;font-size:12px}
+.carta-autocomplete-relativo {position:relative}
+.carta-autocomplete-relativo > input {width:100%}
+.carta-sugestoes {
+  position:absolute;z-index:30;left:0;right:0;top:calc(100% + 5px);
+  max-height:250px;overflow-y:auto;
+  padding:5px;background:#fff;border:1px solid #dce6ef;border-radius:11px;
+  box-shadow:0 14px 35px rgba(15,43,72,.17);
+}
+.carta-sugestoes[hidden] {display:none}
+.carta-sugestao-item {padding:10px 11px;border-radius:7px;font-size:13px;color:#334b62;cursor:pointer;overflow-wrap:anywhere}
+.carta-sugestao-item.ativa,.carta-sugestao-item:hover {background:#e9f2fc;color:#154f83;font-weight:650}
+@media(max-width:430px) {
+  .tm-modal-excluir {padding:25px 18px 20px}
+  .tm-exclusao-acoes .btn {flex:1;min-width:0}
+}
+
+/* V23 — acesso com recuperação/cadastro por e-mail e olhinho de senha. */
+.login-card {max-height:min(95vh,850px);overflow-y:auto;overscroll-behavior:contain}
+.login-card [hidden] {display:none!important}
+.tm-senha-campo {position:relative}
+.tm-senha-campo input {width:100%;padding-right:53px}
+.login-card .tm-mostrar-senha {
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:42px;height:39px;border:0;border-radius:8px;
+  background:transparent;color:#627b93;display:grid;place-items:center;cursor:pointer;
+  margin:0;padding:8px;transition:background .18s,color .18s;
+}
+.login-card .tm-mostrar-senha:hover,.login-card .tm-mostrar-senha[aria-pressed="true"] {background:#eaf1f8;color:#1f4e78}
+.tm-mostrar-senha svg {width:21px;height:21px;display:block}
+.tm-auth-links {display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:17px;flex-wrap:wrap}
+.login-card .tm-auth-link {
+  border:0;background:transparent;color:#1f4e78;cursor:pointer;
+  padding:5px 1px;text-decoration:underline;text-underline-offset:3px;
+  font-weight:650;font-size:12px;
+}
+.login-card .tm-auth-link:hover {color:#0a70b4}
+.login-card .tm-voltar-login {margin-top:15px}
+.login-card .tm-enviar-codigo {margin-top:15px!important;height:42px!important}
+.login-card .tm-auth-info {
+  margin:14px 0 0!important;padding:11px 12px;
+  font-size:12px;line-height:1.55;background:#eaf7f1;color:#17644e;border-radius:8px;
+}
+.login-card form .error {margin-top:14px}
+.login-card #auth-painel-cadastro label,.login-card #auth-painel-recuperar label {margin-top:15px}
+.login-card #auth-painel-cadastro .btn.primary,.login-card #auth-painel-recuperar .btn.primary {margin-top:20px}
+.login-card button:focus-visible {outline:3px solid #82b7e6;outline-offset:2px}
+@media(max-width:480px) {.login-card {padding:22px}.tm-auth-links {gap:6px}}
+
+
+/* V24 — solicitações de acesso, visível somente aos administradores. */
+.tm-usuarios-resumo {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.tm-usuarios-stat {background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:15px}
+.tm-usuarios-stat span {font-weight:650;color:#63748a;font-size:13px}
+.tm-usuarios-stat strong {font-size:29px;color:var(--blue);line-height:1}
+.tm-usuarios-painel {margin-bottom:19px}
+.tm-usuarios-painel h3 {font-size:16px;margin:0 0 16px;color:#173a57}
+.tm-usuarios-lista {display:grid;gap:10px}
+.tm-usuario-card {padding:16px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:#f9fbfd;border:1px solid #e2eaf3;border-radius:11px}
+.tm-usuario-info {min-width:0;display:grid;gap:4px;overflow-wrap:anywhere}
+.tm-usuario-nome {color:#1c364e;font-size:14px}
+.tm-usuario-meta {display:flex;flex-wrap:wrap;gap:6px 17px;color:#617489;font-size:12px}
+.tm-usuario-data {font-size:11px;color:#7f8c9a}
+.tm-usuario-acoes {display:flex;gap:9px;flex-shrink:0}
+.tm-usuario-acoes .btn {min-width:88px}
+.tm-usuario-tag {border-radius:20px;background:#edf4fa;color:#1a567e;font-weight:700;font-size:11px;padding:6px 11px;white-space:nowrap}
+.tm-usuario-tag.tm-usuario-recusado {background:#fff0f0;color:#a73b3b}
+.tm-usuarios-recusados {padding:16px 20px;margin-top:18px}
+.tm-usuarios-recusados summary {color:#4f6478;cursor:pointer;font-weight:700;list-style-position:inside}
+.tm-usuarios-recusados .tm-usuarios-lista {margin-top:16px}
+.tm-modal-excluir .tm-erro-usuario {font-size:12px;color:#ad3030;font-weight:650;margin:-5px 0 17px}
+@media(max-width:650px) {
+  .tm-usuarios-resumo {gap:10px}
+  .tm-usuarios-stat {padding:13px 12px;display:grid;gap:7px}
+  .tm-usuarios-stat strong {font-size:25px}
+  .tm-usuario-card {align-items:stretch;flex-direction:column;gap:12px}
+  .tm-usuario-acoes {width:100%}
+  .tm-usuario-acoes .btn {flex:1}
+  .tm-usuario-tag {align-self:flex-start}
+}
+
+.tm-usuarios-nota {color:var(--muted);font-size:12px;margin:-6px 0 14px}
+
+/* V25 — CPF com máscara e apresentação do login gerado. */
+.login-card .tm-auth-dica {font-size:12px;color:#718096;line-height:1.5;margin:8px 0 0}
+.login-card .tm-cadastro-concluido {padding-top:14px}
+.login-card .tm-cadastro-concluido strong {display:block;color:#16805f;font-size:18px}
+.login-card .tm-cadastro-concluido p {font-size:13px;color:#526376;line-height:1.55;margin:12px 0}
+.login-card .tm-usuario-gerado {display:flex;align-items:stretch;gap:8px;margin:12px 0 18px}
+.login-card .tm-usuario-gerado input {width:100%;min-width:0;flex:1;font-size:19px;font-weight:750;letter-spacing:.2px;color:#1f4e78;background:#edf4fb}
+.login-card .tm-usuario-gerado button {flex-shrink:0}
+@media(max-width:420px){.login-card .tm-usuario-gerado {flex-wrap:wrap}.login-card .tm-usuario-gerado button {width:100%}}
+
+/* V28 — edição de perfis na tela de Gerenciar usuários. */
+.tm-usuario-perfil-edicao {display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:9px}
+.tm-usuario-perfil-label {display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:#50647a}
+.tm-usuario-perfil-select {min-width:132px;min-height:39px;max-width:100%;border:1px solid #d4e0ec;border-radius:8px;background:#fff;color:#213a52;padding:7px 9px}
+.tm-usuario-perfil-edicao .btn {min-height:39px;white-space:nowrap}
+.tm-usuario-perfil-edicao button:disabled,.tm-usuario-perfil-select:disabled {opacity:.5;cursor:not-allowed}
+@media(max-width:650px) {
+  .tm-usuario-perfil-edicao {width:100%;justify-content:flex-start}
+  .tm-usuario-perfil-label {flex:1;justify-content:flex-start}
+  .tm-usuario-perfil-select {flex:1;min-width:125px}
+}
