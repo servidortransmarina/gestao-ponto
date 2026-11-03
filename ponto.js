@@ -1,12 +1,25 @@
 /* FRONTEND — GitHub Pages. Atualize esta URL após uma NOVA implantação do Apps Script. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwUH3n8zl4g_kgxvfSxmXW0qZQ4pi_SuZ-EOM0B86KkM23kSca4n41PZyC-ABhkj3zI/exec';
 const STORAGE_KEY = 'transmarina_gestao_sessao_v2';
-const APP = {sessao:null, cartas:[], pendentes:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle'};
+const APP = {sessao:null, cartas:[], pendentes:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
 const $ = id => document.getElementById(id);
 const norm = x => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
 const esc = v => String(v == null?'':v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => {const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
 const mesAtual = () => today().slice(0,7);
+function ontem() {
+  const d=new Date(); d.setDate(d.getDate()-1);
+  return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+}
+// Alguns navegadores interpretam o ano digitado "26" como 0026 no input date.
+function normalizarAnoDaData(input) {
+  if(!input?.value)return true;
+  const v=input.value, m=v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return false;
+  const ano=Number(m[1]);
+  if(ano>=0&&ano<=99)input.value=String(2000+ano)+'-'+m[2]+'-'+m[3];
+  return /^\d{4}-\d{2}-\d{2}$/.test(input.value);
+}
 // Converte datas para a apresentação brasileira, sem mudar o formato enviado à API.
 // Aceita datas do Sheets, ISO, dd/mm/aaaa, timestamps e Date.toString() em inglês.
 const formatoDiaBR = new Intl.DateTimeFormat('pt-BR', {
@@ -43,7 +56,7 @@ function formatarDataBR(valor, incluirHora = false) {
 const fmtData = x => formatarDataBR(x);
 const fmtDataHora = x => formatarDataBR(x, true);
 const fmtDia = () => formatoDiaBR.format(new Date());
-const mensagens = {horas:'Banco de horas — 3 meses',folgas:'Planejamento de folgas',cartas:'Controle de cartas de ponto',pendentes:'Assinaturas pendentes'};
+const mensagens = {horas:'Banco de horas — 3 meses',folgas:'Planejamento de folgas',cartas:'Controle de cartas de ponto',pendentes:'Assinaturas pendentes',usuarios:'Gerenciar usuários'};
 
 async function api(acao, extras={}) {
   if(!API_URL.startsWith('https://script.google.com/macros/s/'))throw Error('Configure a URL do Apps Script.');
@@ -69,8 +82,175 @@ function showMessage(msg,titulo='Aviso',erro=false) {
   $('msg-icon').textContent=erro?'!':'✓';$('msg-icon').classList.toggle('is-error',erro);
   $('modal-mensagem').hidden=false;
 }
+// Feedback discreto, sem modal, para as atualizações manuais.
+let tmAvisoTimer;
+function feedbackAtualizacao(texto,erro=false) {
+  let aviso=$('tm-feedback-atualizacao');
+  if(!aviso){
+    aviso=document.createElement('div');aviso.id='tm-feedback-atualizacao';
+    aviso.className='tm-feedback-atualizacao';aviso.setAttribute('role','status');
+    aviso.setAttribute('aria-live','polite');document.body.appendChild(aviso);
+  }
+  aviso.textContent=(erro?'⚠ ':'✓ ')+texto;
+  aviso.classList.toggle('tm-feedback-erro',erro);
+  aviso.classList.add('tm-feedback-visivel');
+  clearTimeout(tmAvisoTimer);
+  tmAvisoTimer=setTimeout(()=>aviso.classList.remove('tm-feedback-visivel'),3200);
+}
+
+// Executa a ação real; a logo se desloca enquanto a Promise não foi concluída.
+// Não exibe porcentagens fictícias nem encerra o carregamento antes da resposta.
+async function comBotaoCarregando(botao, executar, texto='Carregando…', sucesso='') {
+  if(!botao)return executar();
+  if(botao.dataset.tmLoading==='1')return false;
+  const conteudoOriginal=botao.innerHTML;
+  const desabilitadoAntes=botao.disabled;
+  const ariaAnterior=botao.getAttribute('aria-label');
+  botao.dataset.tmLoading='1';botao.disabled=true;
+  botao.classList.add('tm-carregando');botao.setAttribute('aria-busy','true');
+  botao.setAttribute('aria-label',texto);
+  botao.innerHTML=`<span class="tm-carregando-texto">${esc(texto)}</span><span class="tm-logo-pista" aria-hidden="true"><span class="tm-logo-viagem"><img src="logotrm.png" alt="" onerror="this.parentElement.classList.add('tm-logo-indisponivel')"></span></span>`;
+  try{
+    const resultado=await executar();
+    if(sucesso){
+      if(resultado===false)feedbackAtualizacao('Não foi possível atualizar. Confira a mensagem na tela.',true);
+      else feedbackAtualizacao(sucesso);
+    }
+    return resultado;
+  }catch(e){
+    showMessage(e.message||'Não foi possível concluir a operação.','Falha na operação',true);
+    return false;
+  }finally{
+    botao.innerHTML=conteudoOriginal;botao.disabled=desabilitadoAntes;
+    botao.classList.remove('tm-carregando');botao.removeAttribute('aria-busy');
+    if(ariaAnterior===null)botao.removeAttribute('aria-label');
+    else botao.setAttribute('aria-label',ariaAnterior);
+    delete botao.dataset.tmLoading;
+  }
+}
 function fecharMensagem(){$('modal-mensagem').hidden=true;}
-function telaLogin(mostrar) {$('modal-login').hidden=!mostrar;$('shell').hidden=mostrar;}
+function telaLogin(mostrar) {
+  $('modal-login').hidden=!mostrar;$('shell').hidden=mostrar;
+  if(mostrar)mostrarTelaAcesso('login');
+}
+function mostrarTelaAcesso(modo) {
+  const dados={
+    login:['Bem-vindo de volta','Entre com seu usuário e senha para acessar seu painel.'],
+    recuperar:['Redefinir senha','Enviaremos um código ao e-mail cadastrado para confirmar sua identidade.'],
+    cadastro:['Criar uma conta','Confirme seu e-mail, informe seu nome e CPF e receba um usuário automático.']
+  };
+  if(!dados[modo])return;
+  ['login','recuperar','cadastro'].forEach(p=>$('auth-painel-'+p).hidden=(p!==modo));
+  $('auth-titulo').textContent=dados[modo][0];$('auth-subtitulo').textContent=dados[modo][1];
+  ['login-erro','recuperar-erro','cadastro-erro'].forEach(id=>$(id).hidden=true);
+}
+function mensagemAcesso(modo,mensagem,erro=false) {
+  const el=$(modo+'-'+(erro?'erro':'info'));
+  el.textContent=mensagem;el.hidden=false;
+  $(modo+'-'+(erro?'info':'erro')).hidden=true;
+}
+async function operacaoAcesso(botao,executar) {
+  if(botao.disabled)return;
+  const original=botao.textContent;botao.disabled=true;botao.textContent='Aguarde…';
+  try{await executar();}
+  catch(e){
+    const modo=botao.id.startsWith('recuperar-')?'recuperar':'cadastro';
+    mensagemAcesso(modo,e.message||'Não foi possível concluir a solicitação.',true);
+  }finally{botao.disabled=false;botao.textContent=original;}
+}
+function ligarOlhosDeSenha() {
+  document.querySelectorAll('[data-olho]').forEach(botao=>botao.addEventListener('click',()=>{
+    const campo=$(botao.dataset.olho),revelar=campo.type==='password';
+    campo.type=revelar?'text':'password';
+    botao.setAttribute('aria-pressed',String(revelar));
+    botao.setAttribute('aria-label',revelar?'Ocultar senha':'Mostrar senha');
+    botao.title=revelar?'Ocultar senha':'Mostrar senha';
+    campo.focus({preventScroll:true});
+  }));
+}
+function configurarAcessoEmail(){
+  ligarOlhosDeSenha();
+  $('auth-abrir-recuperar').addEventListener('click',()=>{
+    if($('login-usuario').value.includes('@'))$('recuperar-email').value=$('login-usuario').value;
+    mostrarTelaAcesso('recuperar');$('recuperar-email').focus();
+  });
+  $('auth-abrir-cadastro').addEventListener('click',()=>{mostrarTelaAcesso('cadastro');$('form-cadastro').hidden=false;$('cadastro-concluido').hidden=true;$('cadastro-voltar').hidden=false;$('cadastro-email').focus();});
+  $('recuperar-voltar').addEventListener('click',()=>mostrarTelaAcesso('login'));
+  $('cadastro-voltar').addEventListener('click',()=>mostrarTelaAcesso('login'));
+  ['recuperar','cadastro'].forEach(modo=>{
+    $(modo+'-email').addEventListener('input',()=>{
+      $(modo+'-etapa2').hidden=true;
+      $(modo+'-info').hidden=true;$(modo+'-erro').hidden=true;
+    });
+    $(modo+'-enviar').addEventListener('click',()=>{
+      const email=$(modo+'-email');
+      if(!email.reportValidity())return;
+      operacaoAcesso($(modo+'-enviar'),async()=>{
+        const acao=modo==='recuperar'?'solicitarCodigoRecuperacao':'solicitarCodigoCadastro';
+        const r=await api(acao,{email:email.value.trim()});
+        $(modo+'-etapa2').hidden=false;
+        mensagemAcesso(modo,r.mensagem||'Se o e-mail estiver disponível, um código será enviado.');
+        $(modo+'-codigo').focus();
+      });
+    });
+  });
+  $('form-recuperar').addEventListener('submit',e=>{
+    e.preventDefault();
+    if($('recuperar-senha').value!==$('recuperar-confirmar').value){
+      mensagemAcesso('recuperar','As senhas informadas não são iguais.',true);return;
+    }
+    operacaoAcesso($('recuperar-confirmar-botao'),async()=>{
+      await api('redefinirSenhaEmail',{
+        email:$('recuperar-email').value.trim(),codigo:$('recuperar-codigo').value.trim(),senhaNova:$('recuperar-senha').value
+      });
+      $('form-recuperar').reset();$('recuperar-etapa2').hidden=true;
+      mostrarTelaAcesso('login');
+      feedbackAtualizacao('Senha alterada! Entre com sua nova senha.');
+    });
+  });
+  $('cadastro-ir-login').addEventListener('click',()=>mostrarTelaAcesso('login'));
+  $('cadastro-copiar-usuario').addEventListener('click',async()=>{
+    const input=$('cadastro-usuario-gerado');
+    input.focus();input.select();
+    try{
+      await navigator.clipboard.writeText(input.value);
+      $('cadastro-copiar-usuario').textContent='Copiado!';
+    }catch(_){
+      // A seleção também permite Ctrl+C se o navegador bloquear a área de transferência.
+      $('cadastro-copiar-usuario').textContent='Selecione e copie';
+    }
+  });
+  $('cadastro-cpf').addEventListener('input',e=>{
+    const d=e.target.value.replace(/\D/g,'').slice(0,11);
+    let valor=d.slice(0,3);
+    if(d.length>3)valor+='.'+d.slice(3,6);
+    if(d.length>6)valor+='.'+d.slice(6,9);
+    if(d.length>9)valor+='-'+d.slice(9,11);
+    e.target.value=valor;
+  });
+  $('form-cadastro').addEventListener('submit',e=>{
+    e.preventDefault();
+    if($('cadastro-senha').value!==$('cadastro-confirmar').value){
+      mensagemAcesso('cadastro','As senhas informadas não são iguais.',true);return;
+    }
+    operacaoAcesso($('cadastro-confirmar-botao'),async()=>{
+      const cpf=$('cadastro-cpf').value.replace(/\D/g,'');
+      if(cpf.length!==11)throw Error('Digite os 11 números do CPF.');
+      const resposta=await api('concluirCadastroEmail',{
+        email:$('cadastro-email').value.trim(),codigo:$('cadastro-codigo').value.trim(),
+        cpf,nome:$('cadastro-nome').value.trim(),senhaNova:$('cadastro-senha').value
+      });
+      if(!resposta.usuario)throw Error('Não foi possível obter o usuário gerado.');
+      $('login-usuario').value=resposta.usuario;
+      $('cadastro-usuario-gerado').value=resposta.usuario;
+      $('form-cadastro').reset();$('cadastro-etapa2').hidden=true;
+      $('form-cadastro').hidden=true;
+      $('cadastro-voltar').hidden=true;
+      $('cadastro-concluido').hidden=false;
+    });
+  });
+}
+
 function encerrarSessaoLocal() {
   APP.sessao=null;localStorage.removeItem(STORAGE_KEY);telaLogin(true);$('login-senha').value='';
 }
@@ -82,14 +262,12 @@ async function login(event) {
   event?.preventDefault();
   const usuario=$('login-usuario').value.trim(),senha=$('login-senha').value;
   $('login-erro').hidden=true;
-  const botao=$('botao-login');botao.disabled=true;botao.textContent='Conectando…';
   try{
     const r=await api('login',{usuario,senha});
     APP.sessao={token:r.token,perfil:r.perfil,usuario:r.usuario,dataLogin:r.dataLogin};
     localStorage.setItem(STORAGE_KEY,JSON.stringify(APP.sessao));
     await iniciarPainel();
   }catch(e){$('login-erro').textContent=e.message;$('login-erro').hidden=false;}
-  finally{botao.disabled=false;botao.textContent='Entrar no sistema';}
 }
 async function verificarSessao() {
   try {
@@ -113,11 +291,11 @@ async function iniciarPainel() {
   $('data-hoje').textContent=fmtDia();
   escolherAba('horas');
   const operacoes=[carregarSaldos(),carregarFolgas(),carregarPendentes()];
-  if(adm)operacoes.push(carregarCartas(),carregarFuncionarios());
+  if(adm)operacoes.push(carregarCartas(),carregarFuncionarios(),carregarUsuarios());
   await Promise.allSettled(operacoes);
 }
 function escolherAba(tab) {
-  if(tab==='cartas'&&APP.sessao?.perfil!=='ADM')return;
+  if(['cartas','usuarios'].includes(tab)&&APP.sessao?.perfil!=='ADM')return;
   APP.aba=tab;
   document.querySelectorAll('.nav-button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='sec-'+tab));
@@ -131,6 +309,128 @@ function escolherSubaba(sub) {
   if(sub==='capa')renderCapa();
   if(sub==='relatorios')renderRelatorios();
   if(sub==='resumo')renderResumoBanco();
+}
+
+// Administração de contas — leitura e decisões sempre validadas no Apps Script.
+async function carregarUsuarios() {
+  if(APP.sessao?.perfil!=='ADM')return false;
+  try {
+    const r=await api('getGestaoUsuarios');
+    APP.usuarios=r.dados||{pendentes:[],ativos:[],recusados:[]};
+    renderUsuarios();return true;
+  } catch(e) {
+    $('usuarios-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;
+    return false;
+  }
+}
+function renderUsuarios() {
+  const dados=APP.usuarios;
+  const pendentes=dados.pendentes||[],ativos=dados.ativos||[],recusados=dados.recusados||[];
+  $('badge-usuarios').textContent=String(pendentes.length);
+  $('quantidade-usuarios-pendentes').textContent=String(pendentes.length);
+  $('quantidade-usuarios-ativos').textContent=String(ativos.length);
+  $('quantidade-usuarios-recusados').textContent=String(recusados.length);
+  const meta=u=>`<div class="tm-usuario-meta"><span>Usuário: <strong>${esc(u.usuario)}</strong></span><span>${esc(u.email||'E-mail não informado')}</span>${u.empresa?`<span>Empresa: ${esc(u.empresa)}</span>`:''}</div>`;
+  $('usuarios-pendentes').innerHTML=pendentes.length?pendentes.map(u=>`
+    <article class="tm-usuario-card">
+      <div class="tm-usuario-info"><strong class="tm-usuario-nome">${esc(u.nome)}</strong>${meta(u)}
+        <span class="tm-usuario-data">Solicitado em ${esc(fmtDataHora(u.solicitadoEm))}</span></div>
+      <div class="tm-usuario-acoes">
+        <button class="btn tm-btn-danger" type="button" data-usuario-acao="recusar" data-email="${esc(u.email)}">Recusar</button>
+        <button class="btn primary" type="button" data-usuario-acao="aprovar" data-email="${esc(u.email)}">Aprovar</button>
+      </div>
+    </article>`).join(''):'<p class="empty">Nenhum cadastro aguardando aprovação.</p>';
+  $('usuarios-ativos').innerHTML=ativos.length?ativos.map(u=>`
+    <article class="tm-usuario-card">
+      <div class="tm-usuario-info"><strong class="tm-usuario-nome">${esc(u.nome)}</strong>${meta(u)}</div>
+      <div class="tm-usuario-perfil-edicao">
+        <span class="tm-usuario-tag">${u.perfil==='ADM'?'Administrador':'Encarregado'}</span>
+        <label class="tm-usuario-perfil-label">Alterar perfil
+          <select class="tm-usuario-perfil-select" aria-label="Novo perfil de ${esc(u.nome)}" ${u.podeAlterarPerfil===false?'disabled':''}>
+            <option value="ENCARREGADO" ${u.perfil==='ENCARREGADO'?'selected':''}>Encarregado</option>
+            <option value="ADM" ${u.perfil==='ADM'?'selected':''}>Administrador</option>
+          </select>
+        </label>
+        <button class="btn secondary tm-alterar-perfil" type="button" data-usuario-acao="perfil" data-usuario="${esc(u.usuario)}" ${u.podeAlterarPerfil===false?'disabled title="Não é possível alterar seu próprio perfil"':''}>Salvar perfil</button>
+      </div>
+    </article>`).join(''):'<p class="empty">Nenhum usuário ativo.</p>';
+  $('usuarios-recusados').innerHTML=recusados.length?recusados.map(u=>`
+    <article class="tm-usuario-card"><div class="tm-usuario-info"><strong class="tm-usuario-nome">${esc(u.nome)}</strong>${meta(u)}</div>
+      <span class="tm-usuario-tag tm-usuario-recusado">Recusado</span></article>`).join(''):
+      '<p class="empty">Nenhuma solicitação recusada.</p>';
+}
+function abrirAlteracaoPerfil(botao) {
+  if(APP.sessao?.perfil!=='ADM')return;
+  const usuario=botao.dataset.usuario;
+  const atual=(APP.usuarios.ativos||[]).find(u=>u.usuario===usuario);
+  const seletor=botao.closest('.tm-usuario-card')?.querySelector('.tm-usuario-perfil-select');
+  const perfil=seletor?.value;
+  if(!atual||!['ADM','ENCARREGADO'].includes(perfil)||atual.podeAlterarPerfil===false)return;
+  if(atual.perfil===perfil){feedbackAtualizacao('Esse usuário já possui o perfil selecionado.');return;}
+  decisaoUsuario={tipo:'perfil',usuario,perfil};
+  $('tm-pergunta-usuario').textContent=`Alterar o perfil de '${atual.nome}' para ${perfil==='ADM'?'Administrador':'Encarregado'}?`;
+  const confirmar=$('tm-confirmar-decisao');
+  confirmar.textContent='Alterar perfil';
+  confirmar.classList.remove('tm-btn-danger');
+  confirmar.classList.add('primary');
+  $('tm-erro-usuario').hidden=true;
+  $('modal-decisao-usuario').showModal();
+}
+let decisaoUsuario=null;
+function abrirDecisaoUsuario(tipo,email) {
+  if(APP.sessao?.perfil!=='ADM')return;
+  const usuario=(APP.usuarios.pendentes||[]).find(u=>u.email===email);
+  if(!usuario||!['aprovar','recusar'].includes(tipo))return;
+  decisaoUsuario={tipo,email};
+  $('tm-pergunta-usuario').textContent=tipo==='aprovar'
+    ?`Aprovar o acesso de '${usuario.nome}'?`
+    :`Recusar o cadastro de '${usuario.nome}'?`;
+  const confirmar=$('tm-confirmar-decisao');
+  confirmar.textContent=tipo==='aprovar'?'Aprovar':'Recusar';
+  confirmar.classList.toggle('tm-btn-danger',tipo==='recusar');
+  confirmar.classList.toggle('primary',tipo==='aprovar');
+  $('tm-erro-usuario').hidden=true;
+  $('modal-decisao-usuario').showModal();
+}
+async function confirmarDecisaoUsuario() {
+  if(!decisaoUsuario)return;
+  const {tipo,email,usuario,perfil}=decisaoUsuario;
+  const botao=$('tm-confirmar-decisao');
+  if(botao.disabled)return;
+  const label=botao.textContent;
+  botao.disabled=true;botao.textContent='Processando…';
+  $('tm-cancelar-decisao').disabled=true;
+  try {
+    const r=tipo==='perfil'
+      ?await api('alterarPerfilUsuario',{usuario,perfil})
+      :await api(tipo==='aprovar'?'aprovarCadastro':'recusarCadastro',{email});
+    $('modal-decisao-usuario').close();decisaoUsuario=null;
+    feedbackAtualizacao(r.mensagem+(r.notificacao===false?' Não foi possível enviar a notificação por e-mail.':''));
+    await carregarUsuarios();
+  } catch(e) {
+    $('tm-erro-usuario').textContent=e.message||'Não foi possível concluir a solicitação.';
+    $('tm-erro-usuario').hidden=false;
+  } finally {
+    botao.disabled=false;botao.textContent=label;
+    $('tm-cancelar-decisao').disabled=false;
+  }
+}
+function configurarGestaoUsuarios() {
+  $('btn-atualizar-usuarios').addEventListener('click',()=>comBotaoCarregando(
+    $('btn-atualizar-usuarios'),carregarUsuarios,'Atualizando usuários…','Lista de usuários atualizada.'));
+  $('usuarios-pendentes').addEventListener('click',event=>{
+    const b=event.target.closest('[data-usuario-acao]');
+    if(b)abrirDecisaoUsuario(b.dataset.usuarioAcao,b.dataset.email);
+  });
+  $('usuarios-ativos').addEventListener('click',event=>{
+    const botao=event.target.closest('[data-usuario-acao="perfil"]');
+    if(botao)abrirAlteracaoPerfil(botao);
+  });
+  $('tm-cancelar-decisao').addEventListener('click',()=>$('modal-decisao-usuario').close());
+  $('tm-confirmar-decisao').addEventListener('click',confirmarDecisaoUsuario);
+  $('modal-decisao-usuario').addEventListener('close',()=>{
+    decisaoUsuario=null;$('tm-erro-usuario').hidden=true;
+  });
 }
 
 function extrairHorarioBruto(v) {
@@ -189,14 +489,13 @@ function definirOptions(id,valores,placeholder,manter='') {
 function atualizarEmpresas() {
   const empresas=[...APP.saldos.map(x=>x.empresa),...APP.funcionarios.map(x=>x.empresa)].filter(Boolean);
   definirOptions('filtro-empresa-horas',empresas,'Todas as empresas');
-  definirOptions('folga-empresa',empresas,'Selecione uma empresa');
-  definirOptions('carta-empresa',empresas,'Não informado');
 }
 async function carregarSaldos() {
   try{
     const r=await api('getSaldoHoras');APP.saldos=r.dados||[];
     atualizarEmpresas();renderSaldos();renderResumoBanco();renderFolgasEncarregado();
-  }catch(e){$('tbody-horas').innerHTML=`<tr><td colspan="13" class="empty">${esc(e.message)}</td></tr>`;if(APP.sessao?.perfil==='ENCARREGADO')$('enc-lista-folgas').innerHTML=`<p class="empty">${esc(e.message)}</p>`;}
+    return true;
+  }catch(e){$('tbody-horas').innerHTML=`<tr><td colspan="13" class="empty">${esc(e.message)}</td></tr>`;if(APP.sessao?.perfil==='ENCARREGADO')$('enc-lista-folgas').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
 }
 // Horas extras do período; NÃO são saldo acumulado disponível para folga.
 function extrasDoMes(f) {
@@ -240,38 +539,115 @@ function renderSaldos() {
 
 function preencherPlanejamento(f) {
   escolherAba('folgas');
-  $('folga-funcionario').value=f.nome;$('folga-empresa').value=f.empresa||'';
+  $('folga-funcionario').value=f.nome;
+  $('folga-empresa').value=f.empresa||'';
+  atualizarEmpresaFolga(f);
   $('folga-data').focus();
 }
 async function sincronizar() {
   if(APP.sessao?.perfil!=='ADM')return;
-  const b=$('btn-sincronizar');b.disabled=true;b.textContent='Sincronizando…';
-  try {const r=await api('sincronizarMobPonto');await Promise.all([carregarSaldos(),carregarFuncionarios()]);showMessage(`${r.resultado.total} funcionários sincronizados nas duas empresas.`,'Sincronização concluída');}
-  catch(e){showMessage(e.message,'Não foi possível sincronizar',true);}
-  finally{b.disabled=false;b.textContent='Sincronizar MobPonto';}
+  try {
+    const r=await api('sincronizarMobPonto');
+    const [atualizouSaldos]=await Promise.all([carregarSaldos(),carregarFuncionarios()]);
+    if(atualizouSaldos===false) {showMessage('MobPonto sincronizado, mas não foi possível recarregar o painel. Use Recarregar painel.','Atualização parcial',true);return false;}
+    showMessage(`${r.resultado.total} funcionários sincronizados nas duas empresas.`,'Sincronização concluída');
+    return true;
+  }catch(e){showMessage(e.message,'Não foi possível sincronizar',true);return false;}
 }
+// V26 — folgas no mesmo padrão visual das cartas, com empresa vinda da base.
+// Combina nome + empresa para não confundir homônimos das duas empresas.
+function funcionariosParaFolga() {
+  const unicos=new Map();
+  for(const f of [...APP.funcionarios,...APP.saldos]) {
+    if(!f?.nome||!f?.empresa)continue;
+    const chave=norm(f.nome)+'|'+norm(f.empresa);
+    // Prioriza dados da aba FUNCIONARIOS; complementa CPF quando necessário.
+    if(!unicos.has(chave))unicos.set(chave,{nome:f.nome,empresa:f.empresa,cpf:f.cpf||''});
+    else if(!unicos.get(chave).cpf&&f.cpf)unicos.get(chave).cpf=f.cpf;
+  }
+  return [...unicos.values()].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')||a.empresa.localeCompare(b.empresa,'pt-BR'));
+}
+function atualizarEmpresaFolga(escolhido=null) {
+  const campo=$('folga-funcionario'),empresa=$('folga-empresa'),info=$('folga-empresa-info');
+  const encontrados=funcionariosParaFolga().filter(f=>norm(f.nome)===norm(campo.value));
+  const atual=escolhido&&encontrados.find(f=>f.empresa===escolhido.empresa);
+  const selecionado=atual||(encontrados.length===1?encontrados[0]:encontrados.find(f=>f.empresa===empresa.value));
+  empresa.value=selecionado?.empresa||'';
+  info.textContent=selecionado?'Empresa identificada: '+selecionado.empresa:
+    encontrados.length>1?'Há mais de uma empresa para esse nome. Selecione o colaborador na lista.':
+    'Selecione um colaborador cadastrado para identificar a empresa.';
+  info.classList.toggle('carta-empresa-aviso',!selecionado);
+  return !!selecionado;
+}
+function configurarSugestaoFolga() {
+  const campo=$('folga-funcionario'),lista=$('folga-sugestoes-funcionario');
+  let opcoes=[],indice=0;
+  function fechar(){lista.hidden=true;lista.replaceChildren();opcoes=[];campo.setAttribute('aria-expanded','false');campo.removeAttribute('aria-activedescendant');}
+  function marcar(){
+    [...lista.children].forEach((item,i)=>{item.classList.toggle('ativa',i===indice);item.setAttribute('aria-selected',String(i===indice));});
+    if(opcoes.length)campo.setAttribute('aria-activedescendant','folga-sugestao-'+indice);
+    lista.children[indice]?.scrollIntoView({block:'nearest'});
+  }
+  function selecionar(i){
+    const f=opcoes[i];if(!f)return;
+    campo.value=f.nome;$('folga-empresa').value=f.empresa;
+    atualizarEmpresaFolga(f);fechar();campo.focus({preventScroll:true});
+  }
+  function atualizar(){
+    const busca=norm(campo.value);
+    if(!busca){fechar();return;}
+    const todos=funcionariosParaFolga();
+    const exatos=todos.filter(f=>norm(f.nome)===busca);
+    // Mostrar os homônimos mesmo quando o nome completo já foi digitado.
+    opcoes=todos.filter(f=>(norm(f.nome).includes(busca)||norm(f.empresa+' '+f.nome).includes(busca))&&
+      (norm(f.nome)!==busca||exatos.length>1))
+      .sort((a,b)=>(norm(a.nome).startsWith(busca)?0:1)-(norm(b.nome).startsWith(busca)?0:1)||a.nome.localeCompare(b.nome,'pt-BR'))
+      .slice(0,8);
+    if(!opcoes.length){fechar();return;}
+    indice=0;
+    lista.innerHTML=opcoes.map((f,i)=>`<div class="carta-sugestao-item" id="folga-sugestao-${i}" role="option" data-index="${i}" aria-selected="${i===0}"><strong>${esc(f.nome)}</strong><small class="block">${esc(f.empresa)}</small></div>`).join('');
+    lista.hidden=false;campo.setAttribute('aria-expanded','true');marcar();
+  }
+  campo.addEventListener('input',()=>{$('folga-empresa').value='';atualizarEmpresaFolga();atualizar();});
+  campo.addEventListener('focus',atualizar);
+  campo.addEventListener('change',atualizarEmpresaFolga);
+  campo.addEventListener('keydown',e=>{
+    if(e.isComposing||e.key==='Process')return;
+    if(e.key==='Escape'&&!lista.hidden){e.preventDefault();e.stopPropagation();fechar();return;}
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!lista.hidden){
+      e.preventDefault();e.stopPropagation();indice=(indice+(e.key==='ArrowDown'?1:-1)+opcoes.length)%opcoes.length;marcar();return;
+    }
+    if(e.key==='Enter'&&!lista.hidden&&opcoes.length){e.preventDefault();e.stopPropagation();selecionar(indice);}
+  });
+  lista.addEventListener('pointerdown',e=>{const item=e.target.closest('.carta-sugestao-item');if(item){e.preventDefault();selecionar(Number(item.dataset.index));}});
+  campo.addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==campo)fechar();},0));
+}
+
 async function carregarFuncionarios() {
   try{
     const r=await api('getFuncionarios');APP.funcionarios=r.dados||[];
     $('lista-funcionarios').innerHTML=APP.funcionarios.map(x=>`<option value="${esc(x.nome)}" label="${esc(x.empresa)}"></option>`).join('');
-    atualizarEmpresas();
+    atualizarEmpresas();atualizarEmpresaCarta();
   }catch(e){console.warn(e.message);}
 }
 function encontrarFuncionario(nome,empresa) {
   return APP.funcionarios.find(f=>norm(f.nome)===norm(nome)&&(!empresa||f.empresa===empresa))||APP.saldos.find(f=>norm(f.nome)===norm(nome)&&(!empresa||f.empresa===empresa));
 }
 async function salvarFolga(e) {
-  e.preventDefault();const b=$('salvar-folga');b.disabled=true;
+  e.preventDefault();
   try{
     const nome=$('folga-funcionario').value.trim(),empresa=$('folga-empresa').value;
-    const funcionario=encontrarFuncionario(nome,empresa);
-    const dados={funcionario:nome,empresa,cpf:funcionario?.cpf||'',dataFolga:$('folga-data').value,
+    // A empresa vem do cadastro; não aceitar funcionários não identificados.
+    const funcionario=funcionariosParaFolga().find(f=>norm(f.nome)===norm(nome)&&f.empresa===empresa);
+    if(!funcionario){atualizarEmpresaFolga();throw Error('Selecione um funcionário da lista para identificar a empresa.');}
+    if(!normalizarAnoDaData($('folga-data')))throw Error('Confira a data da folga.');
+    const dados={funcionario:funcionario.nome,empresa:funcionario.empresa,cpf:funcionario.cpf||'',dataFolga:$('folga-data').value,
       horasPlanejadas:$('folga-horas').value.trim(),observacoes:$('folga-obs').value.trim()};
     await api('salvarFolga',{dados});
     $('form-folga').reset();$('folga-horas').value='08:00';
+    atualizarEmpresaFolga();
     await carregarFolgas();showMessage('Folga registrada como PLANEJADA.','Planejamento salvo');
   }catch(err){showMessage(err.message,'Não foi possível registrar',true);}
-  finally{b.disabled=false;}
 }
 async function carregarFolgas() {
   try{APP.folgas=(await api('getFolgas')).dados||[];renderFolgas();}
@@ -292,8 +668,8 @@ async function mudarStatusFolga(id,status) {
 
 async function carregarCartas() {
   if(APP.sessao?.perfil!=='ADM')return;
-  try{APP.cartas=(await api('getDadosADM')).dados||[];renderCartas();renderCapa();renderRelatorios();atualizarResponsaveis();}
-  catch(e){$('tbody-cartas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;}
+  try{APP.cartas=(await api('getDadosADM')).dados||[];renderCartas();if(APP.subaba==='capa')renderCapa();if(APP.subaba==='relatorios')renderRelatorios();atualizarResponsaveis();return true;}
+  catch(e){$('tbody-cartas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;return false;}
 }
 function atualizarResponsaveis() {
   const lista=[...new Set(APP.cartas.map(x=>x.responsavel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
@@ -302,7 +678,11 @@ function atualizarResponsaveis() {
 function filtroDeCartas({texto='',status='',mes=''}={}) {
   const busca=norm(texto);
   return APP.cartas.filter(c=>(!status||c.status===status)&&(!mes||c.dataOcorrencia.slice(0,7)===mes)&&
-      (!busca||norm(c.funcionario+' '+c.responsavel+' '+c.motivo).includes(busca)));
+      (!busca||norm(c.funcionario+' '+c.responsavel+' '+c.motivo+' '+c.adicional+' '+c.observacoes).includes(busca)));
+}
+function textoComplementarCarta(c) {
+  const adicional=(c.adicional||'').trim(), obs=(c.observacoes||'').trim();
+  return obs&&adicional&&norm(obs)!==norm(adicional)?`${adicional} | ${obs}`:obs||adicional;
 }
 function renderCartas() {
   $('cartas-total').textContent=APP.cartas.length;
@@ -310,26 +690,129 @@ function renderCartas() {
   $('cartas-assinadas').textContent=APP.cartas.filter(c=>c.status==='SIM').length;
   const lista=filtroDeCartas({texto:$('filtro-cartas').value,status:$('filtro-cartas-status').value,mes:$('filtro-cartas-mes').value});
   const exibidas=lista.slice(0,200);
-  $('tbody-cartas').innerHTML=exibidas.length?exibidas.map(c=>`<tr><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong>${c.motivo?`<small class="block">${esc(c.motivo)}</small>`:''}</td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td><span class="status ${c.status==='SIM'?'concedida':'planejada'}">${esc(c.status)}</span></td><td>${esc(c.adicional||'—')}</td><td>${c.status!=='SIM'?`<button class="btn tiny subtle carta-assinar" data-id="${esc(c.id)}">Confirmar</button>`:''}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma carta encontrada.</td></tr>';
+  $('tbody-cartas').innerHTML=exibidas.length?exibidas.map(c=>`<tr><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td><span class="status ${c.status==='SIM'?'concedida':'planejada'}">${esc(c.status)}</span></td><td>${esc(textoComplementarCarta(c)||'—')}</td><td><div class="cell-actions carta-acoes">${c.status!=='SIM'?`<button class="btn tiny subtle carta-assinar" data-id="${esc(c.id)}">Confirmar</button>`:''}<button class="btn tiny secondary carta-editar" data-id="${esc(c.id)}" type="button">Editar</button><button class="btn tiny carta-excluir" data-id="${esc(c.id)}" type="button" aria-label="Excluir carta de ${esc(c.funcionario)}">Excluir</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma carta encontrada.</td></tr>';
   if(lista.length>exibidas.length)$('tbody-cartas').innerHTML+=`<tr><td colspan="7" class="empty">Exibindo ${exibidas.length} de ${lista.length} cartas. Use os filtros para localizar outros registros.</td></tr>`;
 }
+function identificarFuncionarioCarta(nome) {
+  const chave=norm(nome);
+  if(!chave)return {erro:'Selecione um colaborador cadastrado para identificar a empresa.'};
+  const pessoas=APP.funcionarios.filter(f=>norm(f.nome)===chave);
+  const saldos=APP.saldos.filter(f=>norm(f.nome)===chave);
+  const registros=pessoas.length?pessoas:saldos;
+  if(!registros.length)return {erro:'Funcionário não encontrado na base atual.'};
+  const empresas=[...new Set(registros.map(f=>f.empresa).filter(Boolean))];
+  if(empresas.length!==1)return {erro:'Nome cadastrado em mais de uma empresa. Verifique o cadastro.'};
+  return {nome:registros[0].nome,empresa:empresas[0]};
+}
+function atualizarEmpresaCarta() {
+  const nome=$('carta-funcionario').value.trim(),ident=identificarFuncionarioCarta(nome);
+  const legado=APP.cartaEditando&&APP.cartas.find(c=>c.id===APP.cartaEditando);
+  const podePreservar=legado&&norm(legado.funcionario)===norm(nome);
+  const empresa=ident.empresa||(podePreservar?legado.empresa:'');
+  const p=$('carta-empresa-info');
+  p.textContent=empresa?'Empresa identificada automaticamente: '+empresa:(podePreservar?'Carta histórica sem empresa informada. É possível editar mantendo a informação original.':(nome?ident.erro:'Selecione um colaborador cadastrado para identificar a empresa.'));
+  p.classList.toggle('carta-empresa-aviso',!empresa&&!!nome);
+  return empresa;
+}
+function definirModoCarta(c=null) {
+  fecharSugestoesCarta.forEach(fechar=>fechar());
+  APP.cartaEditando=c?.id||null;
+  $('titulo-form-carta').textContent=c?'Editar carta de ponto':'Registrar nova carta';
+  $('btn-salvar-carta').textContent=c?'Salvar alterações':'Salvar carta';
+  $('btn-cancelar-edicao-carta').hidden=!c;
+  $('form-carta').reset();
+  $('carta-funcionario').value=c?.funcionario||'';
+  $('carta-ocorrencia').value=c?.dataOcorrencia||ontem();
+  $('carta-correcao').value=c?c.dataCorrecao||'':today();
+  $('carta-responsavel').value=c?.responsavel||'';
+  $('carta-assinado').value=c?.status||'NÃO';
+  $('carta-obs').value=c?textoComplementarCarta(c):'';
+  atualizarEmpresaCarta();
+  if(c){$('form-carta').scrollIntoView({behavior:'smooth',block:'center'});$('carta-funcionario').focus({preventScroll:true});}
+}
+function reexibirCartasLocais() {
+  renderCartas();if(APP.subaba==='capa')renderCapa();if(APP.subaba==='relatorios')renderRelatorios();atualizarResponsaveis();
+  if(APP.sessao?.perfil==='ADM'){
+    APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM');
+    $('badge-pendentes').textContent=APP.pendentes.length;
+    renderPendentes();
+  }
+}
 async function salvarCarta(e) {
-  e.preventDefault();const botao=$('btn-salvar-carta');botao.disabled=true;
+  e?.preventDefault();
   try {
-    const dados={funcionario:$('carta-funcionario').value.trim(),motivo:$('carta-motivo').value.trim(),
+    if(!normalizarAnoDaData($('carta-ocorrencia'))||!normalizarAnoDaData($('carta-correcao')))throw Error('Confira as datas informadas.');
+    const nome=$('carta-funcionario').value.trim(), ident=identificarFuncionarioCarta(nome);
+    const anterior=APP.cartaEditando&&APP.cartas.find(c=>c.id===APP.cartaEditando);
+    const mesmoNome=anterior&&norm(anterior.funcionario)===norm(nome);
+    const empresa=ident.empresa||(mesmoNome?anterior.empresa:'');
+    if(!empresa&&!mesmoNome)throw Error(ident.erro||'Selecione um funcionário cadastrado.');
+    const dados={funcionario:ident.nome||nome,empresa,
       dataOcorrencia:$('carta-ocorrencia').value,responsavel:$('carta-responsavel').value.trim(),
       dataCorrecao:$('carta-correcao').value,assinado:$('carta-assinado').value,
-      adicional:$('carta-adicional').value.trim(),empresa:$('carta-empresa').value,observacoes:$('carta-obs').value.trim()};
-    await api('salvarNovaCarta',{dados});$('form-carta').reset();$('carta-ocorrencia').value=today();
-    await Promise.all([carregarCartas(),carregarPendentes()]);showMessage('Carta de ponto salva no Google Sheets.','Carta registrada');
-  }catch(err){showMessage(err.message,'Falha ao salvar a carta',true);}
-  finally{botao.disabled=false;}
+      observacoes:$('carta-obs').value.trim()};
+    if(!dados.dataOcorrencia)throw Error('Informe a data da ocorrência.');
+    const editando=APP.cartaEditando;
+    const r=editando?await api('editarCarta',{idCarta:editando,dados}):await api('salvarNovaCarta',{dados});
+    if(!r.carta)throw Error('O servidor não retornou os dados da carta. Atualize o histórico antes de continuar.');
+    if(editando){const idx=APP.cartas.findIndex(c=>c.id===editando);if(idx!==-1)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);}
+    else APP.cartas.unshift(r.carta);
+    definirModoCarta();reexibirCartasLocais();
+    feedbackAtualizacao(editando?'Carta atualizada com sucesso.':'Carta registrada com sucesso.');
+    return true;
+  }catch(err){showMessage(err.message,'Falha ao salvar a carta',true);return false;}
+}
+// Caixa de confirmação integrada ao visual do site. O backend já exclui em definitivo.
+function confirmarExclusaoCarta(nome) {
+  const modal=$('modal-excluir-carta');
+  if(modal.open)return Promise.resolve(false);
+  $('tm-confirma-exclusao-texto').textContent=`Certeza que deseja excluir '${nome}'?`;
+  const focoAnterior=document.activeElement;
+  return new Promise(resolve=>{
+    let finalizado=false;
+    const cancelar=$('tm-cancelar-exclusao');
+    const confirmar=$('tm-confirmar-exclusao');
+    function finalizar(confirmou){
+      if(finalizado)return;
+      finalizado=true;
+      cancelar.removeEventListener('click',aoCancelar);
+      confirmar.removeEventListener('click',aoConfirmar);
+      modal.removeEventListener('cancel',aoEscape);
+      modal.removeEventListener('close',aoFechar);
+      modal.removeEventListener('click',aoFundo);
+      if(modal.open)modal.close();
+      if(focoAnterior?.isConnected)focoAnterior.focus({preventScroll:true});
+      resolve(confirmou);
+    }
+    const aoCancelar=()=>finalizar(false);
+    const aoConfirmar=()=>finalizar(true);
+    const aoEscape=e=>{e.preventDefault();finalizar(false);};
+    const aoFechar=()=>finalizar(false);
+    const aoFundo=e=>{if(e.target===modal)finalizar(false);};
+    cancelar.addEventListener('click',aoCancelar);
+    confirmar.addEventListener('click',aoConfirmar);
+    modal.addEventListener('cancel',aoEscape);
+    modal.addEventListener('close',aoFechar);
+    modal.addEventListener('click',aoFundo);
+    modal.showModal();
+    cancelar.focus();
+  });
+}
+async function excluirCarta(id) {
+  try {
+    await api('excluirCarta',{idCarta:id});
+    APP.cartas=APP.cartas.filter(c=>c.id!==id);
+    APP.selecionadas.delete(id);
+    if(APP.cartaEditando===id)definirModoCarta();
+    reexibirCartasLocais();feedbackAtualizacao('Carta excluída com sucesso.');
+    return true;
+  }catch(e){showMessage(e.message,'Falha ao excluir carta',true);return false;}
 }
 async function carregarPendentes() {
   try{
     APP.pendentes=((await api('getDadosEncarregado')).dados||[]).filter(c=>c.status!=='SIM');
-    $('badge-pendentes').textContent=APP.pendentes.length;renderPendentes();
-  }catch(e){$('lista-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;}
+    $('badge-pendentes').textContent=APP.pendentes.length;renderPendentes();return true;
+  }catch(e){$('lista-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
 }
 function renderPendentes() {
   $('lista-pendentes').innerHTML=APP.pendentes.length?APP.pendentes.map(c=>`<article class="pending-item"><div><span class="pending-date">${fmtData(c.dataOcorrencia)}</span><h4>${esc(c.funcionario)}</h4><p>${esc(c.motivo||'Carta aguardando assinatura')}${c.responsavel?' • Responsável: '+esc(c.responsavel):''}</p></div><button class="btn primary carta-assinar" data-id="${esc(c.id)}">Confirmar assinatura</button></article>`).join(''):'<div class="empty tall">Nenhuma carta pendente de assinatura.</div>';
@@ -488,8 +971,14 @@ function renderFolgasEncarregado() {
     const meses=[f.saldoMesAtual,f.saldoMesAnterior,f.saldoMes2Anterior].map(minutos);
     const completos=meses.every(m=>m!==null && Number.isFinite(m));
     const saldo=completos?meses.reduce((a,b)=>a+b,0):null;
-    return {nome:f.nome,empresa:f.empresa,dias:calcularDiasFolgaVBA(f.nome,saldo)};
-  }).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    return {nome:f.nome,empresa:f.empresa,dias:calcularDiasFolgaVBA(f.nome,saldo),saldo};
+  }).sort((a,b)=>{
+    // Mais dias primeiro; em empates, mais horas positivas no banco.
+    // SEM DADOS fica por último para não parecer saldo zerado.
+    if(a.dias===null)return b.dias===null?a.nome.localeCompare(b.nome,'pt-BR'):1;
+    if(b.dias===null)return -1;
+    return b.dias-a.dias || b.saldo-a.saldo || a.nome.localeCompare(b.nome,'pt-BR');
+  });
   lista.innerHTML=pessoas.length?pessoas.map(f=>`<div class="enc-linha-folga"><span class="enc-nome">${esc(f.nome)}</span><span class="enc-dias${f.dias===null?' sem-dados':''}" aria-label="${f.dias===null?'Não informado':f.dias+' dias'}">${f.dias===null?'SEM DADOS':f.dias+'*'}</span></div>`).join(''):
     '<p class="empty">Nenhum funcionário encontrado.</p>';
 }
@@ -718,25 +1207,127 @@ async function compartilharImagem(tipo,modo='compartilhar'){
 }
 
 function onClickDelegado(e) {
-  const assinar=e.target.closest('.carta-assinar');if(assinar)return confirmarCarta(assinar.dataset.id);
-  const folga=e.target.closest('.folga-status');if(folga)return mudarStatusFolga(folga.dataset.id,folga.dataset.status);
+  const editar=e.target.closest('.carta-editar');if(editar){const carta=APP.cartas.find(c=>c.id===editar.dataset.id);if(carta)definirModoCarta(carta);return;}
+  const excluir=e.target.closest('.carta-excluir');if(excluir){
+    const carta=APP.cartas.find(c=>c.id===excluir.dataset.id);
+    if(!carta){showMessage('Carta não encontrada. Atualize o histórico.','Aviso',true);return;}
+    confirmarExclusaoCarta(carta.funcionario).then(confirmou=>{
+      if(confirmou)comBotaoCarregando(excluir,()=>excluirCarta(carta.id),'Excluindo…');
+    });
+    return;
+  }
+  const assinar=e.target.closest('.carta-assinar');if(assinar)return comBotaoCarregando(assinar,()=>confirmarCarta(assinar.dataset.id),'Confirmando…');
+  const folga=e.target.closest('.folga-status');if(folga)return comBotaoCarregando(folga,()=>mudarStatusFolga(folga.dataset.id,folga.dataset.status),'Salvando…');
   const planejar=e.target.closest('.acao-planejar');
   if(planejar) {try{preencherPlanejamento(JSON.parse(decodeURIComponent(planejar.dataset.employee)));}catch(e){showMessage('Não foi possível selecionar o funcionário.','Erro',true);}}
 }
+// A área de cartas não tinha um botão próprio de atualização.
+function instalarAtualizacaoDeCartas(){
+  const cabecalho=document.querySelector('#sec-cartas > .section-header');
+  if(!cabecalho||$('btn-atualizar-cartas'))return;
+  const acoes=document.createElement('div');acoes.className='actions';
+  const botao=document.createElement('button');botao.type='button';botao.id='btn-atualizar-cartas';
+  botao.className='btn secondary';botao.textContent='Atualizar cartas';
+  botao.title='Recarregar as cartas da planilha, inclusive as assinaturas';
+  acoes.appendChild(botao);cabecalho.appendChild(acoes);
+  botao.addEventListener('click',()=>comBotaoCarregando(botao,async()=>{
+    const resultados=await Promise.all([carregarCartas(),carregarPendentes()]);
+    return resultados.every(Boolean);
+  },'Atualizando cartas…','Cartas de ponto atualizadas.'));
+}
+// Sugestões próprias para que Enter selecione o nome, sem submeter o formulário.
+const fecharSugestoesCarta=[];
+function configurarSugestaoCarta(idInput,idLista,obterValores,aposSelecionar=()=>{}) {
+  const campo=$(idInput),lista=$(idLista);
+  let opcoes=[],indice=0;
+  function fechar() {
+    lista.hidden=true;lista.replaceChildren();opcoes=[];
+    campo.setAttribute('aria-expanded','false');campo.removeAttribute('aria-activedescendant');
+  }
+  fecharSugestoesCarta.push(fechar);
+  function marcarAtiva() {
+    [...lista.children].forEach((item,i)=>{
+      const ativa=i===indice;
+      item.classList.toggle('ativa',ativa);
+      item.setAttribute('aria-selected',String(ativa));
+    });
+    if(opcoes.length)campo.setAttribute('aria-activedescendant',`${idLista}-op-${indice}`);
+    lista.children[indice]?.scrollIntoView({block:'nearest'});
+  }
+  function selecionar(i) {
+    const escolhido=opcoes[i];if(!escolhido)return;
+    campo.value=escolhido;
+    campo.dispatchEvent(new Event('input',{bubbles:true}));
+    campo.dispatchEvent(new Event('change',{bubbles:true}));
+    fechar();aposSelecionar();
+    campo.focus({preventScroll:true});
+  }
+  function atualizar() {
+    const busca=norm(campo.value);
+    if(!busca){fechar();return;}
+    opcoes=[...new Map(obterValores().filter(Boolean).map(nome=>[norm(nome),nome])).values()]
+      .filter(nome=>norm(nome).includes(busca)&&norm(nome)!==busca)
+      .sort((a,b)=>{
+        const aIni=norm(a).startsWith(busca)?0:1,bIni=norm(b).startsWith(busca)?0:1;
+        return aIni-bIni||a.localeCompare(b,'pt-BR');
+      }).slice(0,8);
+    if(!opcoes.length){fechar();return;}
+    indice=0;
+    lista.innerHTML=opcoes.map((nome,i)=>`<div class="carta-sugestao-item" id="${idLista}-op-${i}" role="option" aria-selected="${i===0}" data-index="${i}">${esc(nome)}</div>`).join('');
+    lista.hidden=false;campo.setAttribute('aria-expanded','true');marcarAtiva();
+  }
+  campo.addEventListener('input',atualizar);
+  campo.addEventListener('focus',atualizar);
+  campo.addEventListener('keydown',e=>{
+    if(e.isComposing||e.key==='Process')return;
+    if(e.key==='Escape'&&!lista.hidden){e.preventDefault();e.stopPropagation();fechar();return;}
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!lista.hidden){
+      e.preventDefault();e.stopPropagation();
+      indice=(indice+(e.key==='ArrowDown'?1:-1)+opcoes.length)%opcoes.length;
+      marcarAtiva();return;
+    }
+    if(e.key==='Enter'&&!lista.hidden&&opcoes.length){
+      e.preventDefault();e.stopPropagation();selecionar(indice);
+    }
+  });
+  lista.addEventListener('pointerdown',e=>{
+    const item=e.target.closest('.carta-sugestao-item');
+    if(!item)return;
+    e.preventDefault();selecionar(Number(item.dataset.index));
+  });
+  campo.addEventListener('blur',()=>{setTimeout(()=>{if(document.activeElement!==campo)fechar();},0);});
+}
+function configurarEnterEntreCamposCarta(idFormulario='form-carta',idBotao='btn-salvar-carta') {
+  const form=$(idFormulario);
+  // Enter em texto/select/data avança, somente o clique em Salvar (ou foco nele + Enter) grava.
+  form.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'||e.isComposing||e.ctrlKey||e.metaKey||e.altKey)return;
+    const atual=e.target;
+    if(!atual.matches('input,select')||atual.type==='submit')return;
+    e.preventDefault();
+    const campos=[...form.querySelectorAll('input,select,textarea')]
+      .filter(c=>!c.disabled&&c.tabIndex!==-1&&c.getClientRects().length);
+    const proximo=campos[campos.indexOf(atual)+1]||$(idBotao);
+    proximo.focus();
+  });
+}
 function registrarEventos() {
-  $('form-login').addEventListener('submit',login);
+  instalarAtualizacaoDeCartas();
+  $('form-login').addEventListener('submit',e=>{e.preventDefault();login(e);});
+  configurarAcessoEmail();
+  configurarGestaoUsuarios();
   $('msg-fechar').addEventListener('click',fecharMensagem);
-  $('btn-sair').addEventListener('click',logout);
+  $('btn-sair').addEventListener('click',()=>comBotaoCarregando($('btn-sair'),logout,'Saindo…'));
   document.querySelectorAll('.nav-button').forEach(b=>b.addEventListener('click',()=>escolherAba(b.dataset.tab)));
   document.querySelectorAll('.subnav-btn').forEach(b=>b.addEventListener('click',()=>escolherSubaba(b.dataset.sub)));
-  $('btn-recarregar-horas').addEventListener('click',carregarSaldos);
-  $('enc-recarregar-horas').addEventListener('click',carregarSaldos);
+  $('btn-recarregar-horas').addEventListener('click',()=>comBotaoCarregando($('btn-recarregar-horas'),carregarSaldos,'Atualizando painel…','Painel atualizado com os últimos dados salvos.'));
+  $('enc-recarregar-horas').addEventListener('click',()=>comBotaoCarregando($('enc-recarregar-horas'),carregarSaldos,'Atualizando lista…','Lista de funcionários atualizada.'));
   $('enc-busca-funcionario').addEventListener('input',renderFolgasEncarregado);
-  $('btn-sincronizar').addEventListener('click',sincronizar);
+  $('btn-sincronizar').addEventListener('click',()=>comBotaoCarregando($('btn-sincronizar'),sincronizar,'Sincronizando MobPonto…'));
   ['filtro-horas','filtro-empresa-horas','filtro-saldo'].forEach(id=>$(id).addEventListener(id==='filtro-horas'?'input':'change',renderSaldos));
-  $('form-folga').addEventListener('submit',salvarFolga);
+  $('form-folga').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('salvar-folga'),()=>salvarFolga(e),'Salvando folga…');});
   $('filtro-folga-status').addEventListener('change',renderFolgas);
-  $('form-carta').addEventListener('submit',salvarCarta);
+  $('form-carta').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('btn-salvar-carta'),()=>salvarCarta(e),'Salvando carta…');});
   ['filtro-cartas','filtro-cartas-status','filtro-cartas-mes'].forEach(id=>$(id).addEventListener(id==='filtro-cartas'?'input':'change',renderCartas));
   $('limpar-filtro-cartas').addEventListener('click',()=>{$('filtro-cartas').value='';$('filtro-cartas-status').value='';$('filtro-cartas-mes').value='';renderCartas();});
   ['filtro-capa','filtro-capa-mes'].forEach(id=>$(id).addEventListener(id==='filtro-capa'?'input':'change',renderCapa));
@@ -749,17 +1340,27 @@ function registrarEventos() {
   $('relatorio-todos').addEventListener('click',()=>{$('filtro-relatorio-mes').value='';renderRelatorios();});
   $('resumo-empresa').addEventListener('change',renderResumoBanco);
   $('resumo-busca').addEventListener('input',renderResumoBanco);
-  $('baixar-resumo').addEventListener('click',()=>compartilharImagem('banco','baixar'));
-  $('compartilhar-resumo').addEventListener('click',()=>compartilharImagem('banco'));
-  $('baixar-ranking').addEventListener('click',()=>compartilharImagem('ranking','baixar'));
-  $('compartilhar-ranking').addEventListener('click',()=>compartilharImagem('ranking'));
-  $('btn-recarregar-pendentes').addEventListener('click',carregarPendentes);
+  $('baixar-resumo').addEventListener('click',()=>comBotaoCarregando($('baixar-resumo'),()=>compartilharImagem('banco','baixar'),'Gerando PNG…'));
+  $('compartilhar-resumo').addEventListener('click',()=>comBotaoCarregando($('compartilhar-resumo'),()=>compartilharImagem('banco'),'Preparando imagem…'));
+  $('baixar-ranking').addEventListener('click',()=>comBotaoCarregando($('baixar-ranking'),()=>compartilharImagem('ranking','baixar'),'Gerando PNG…'));
+  $('compartilhar-ranking').addEventListener('click',()=>comBotaoCarregando($('compartilhar-ranking'),()=>compartilharImagem('ranking'),'Preparando imagem…'));
+  $('btn-recarregar-pendentes').addEventListener('click',()=>comBotaoCarregando($('btn-recarregar-pendentes'),carregarPendentes,'Atualizando pendentes…','Cartas pendentes atualizadas.'));
   document.addEventListener('click',onClickDelegado);
-  $('folga-funcionario').addEventListener('change',()=>{const emp=encontrarFuncionario($('folga-funcionario').value);if(emp?.empresa)$('folga-empresa').value=emp.empresa;});
-  $('carta-funcionario').addEventListener('change',()=>{const emp=encontrarFuncionario($('carta-funcionario').value);if(emp?.empresa)$('carta-empresa').value=emp.empresa;});
+  configurarSugestaoFolga();
+  configurarEnterEntreCamposCarta('form-folga','salvar-folga');
+  ['folga-data'].forEach(id=>{const input=$(id);input.addEventListener('change',()=>normalizarAnoDaData(input));input.addEventListener('blur',()=>normalizarAnoDaData(input));});
+  $('carta-funcionario').addEventListener('input',atualizarEmpresaCarta);
+  $('carta-funcionario').addEventListener('change',atualizarEmpresaCarta);
+  configurarSugestaoCarta('carta-funcionario','carta-sugestoes-funcionario',()=>[
+    ...APP.funcionarios.map(f=>f.nome),...APP.saldos.map(f=>f.nome)
+  ],atualizarEmpresaCarta);
+  configurarSugestaoCarta('carta-responsavel','carta-sugestoes-responsavel',()=>APP.cartas.map(c=>c.responsavel));
+  configurarEnterEntreCamposCarta();
+  $('btn-cancelar-edicao-carta').addEventListener('click',()=>definirModoCarta());
+  ['carta-ocorrencia','carta-correcao'].forEach(id=>{const input=$(id);input.addEventListener('change',()=>normalizarAnoDaData(input));input.addEventListener('blur',()=>normalizarAnoDaData(input));});
 }
 document.addEventListener('DOMContentLoaded',()=>{
-  registrarEventos();$('carta-ocorrencia').value=today();$('filtro-relatorio-mes').value=mesAtual();
+  registrarEventos();definirModoCarta();$('filtro-relatorio-mes').value=mesAtual();
   // A faixa de meses é definida pelos dados efetivamente sincronizados em renderResumoBanco().
   setInterval(()=>{if(APP.sessao&&APP.sessao.dataLogin!==today())encerrarSessaoLocal();},20000);
   verificarSessao();
