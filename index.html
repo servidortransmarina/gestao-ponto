@@ -11,21 +11,115 @@
   <div class="modal-overlay" id="modal-login" aria-modal="true" role="dialog">
     <div class="login-card">
       <div class="login-brand"><img src="logotrm.png" alt="Transmarina" onerror="this.style.display='none'"><div><strong>GESTÃO DE PONTO</strong><small>Transmarina • Acesso restrito</small></div></div>
-      <h1>Bem-vindo de volta</h1>
-      <p>Entre com seu usuário e senha para acessar seu painel.</p>
-      <form id="form-login">
-        <label for="login-usuario">Usuário</label><input id="login-usuario" name="username" autocomplete="username" required>
-        <label for="login-senha">Senha</label><input id="login-senha" type="password" autocomplete="current-password" required>
-        <p class="error" id="login-erro" hidden></p>
-        <button class="btn primary full" type="submit" id="botao-login">Entrar no sistema</button>
-      </form>
-      <p class="login-foot">A sessão termina à meia-noite. Acesso monitorado.</p>
+      <h1 id="auth-titulo">Bem-vindo de volta</h1>
+      <p id="auth-subtitulo">Entre com seu usuário e senha para acessar seu painel.</p>
+      <section id="auth-painel-login" aria-label="Acessar conta">
+        <form id="form-login">
+          <label for="login-usuario">Usuário</label>
+          <input id="login-usuario" name="username" autocomplete="username" required>
+          <label for="login-senha">Senha</label>
+          <div class="tm-senha-campo">
+            <input id="login-senha" type="password" autocomplete="current-password" required>
+            <button type="button" class="tm-mostrar-senha" data-olho="login-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <p class="error" id="login-erro" hidden role="alert"></p>
+          <button class="btn primary full" type="submit" id="botao-login">Entrar no sistema</button>
+        </form>
+        <div class="tm-auth-links">
+          <button type="button" class="tm-auth-link" id="auth-abrir-recuperar">Esqueceu a senha?</button>
+          <button type="button" class="tm-auth-link" id="auth-abrir-cadastro">Criar uma conta</button>
+        </div>
+      </section>
+      <section id="auth-painel-recuperar" aria-label="Recuperar senha" hidden>
+        <form id="form-recuperar">
+          <label for="recuperar-email">E-mail cadastrado</label>
+          <input id="recuperar-email" type="email" autocomplete="email" maxlength="254" placeholder="seuemail@empresa.com" required>
+          <button type="button" class="btn secondary full tm-enviar-codigo" id="recuperar-enviar">Enviar código por e-mail</button>
+          <div id="recuperar-etapa2" hidden>
+            <label for="recuperar-codigo">Código recebido (6 dígitos)</label>
+            <input id="recuperar-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
+            <label for="recuperar-senha">Nova senha (mínimo de 12 caracteres)</label>
+            <div class="tm-senha-campo">
+              <input id="recuperar-senha" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+              <button type="button" class="tm-mostrar-senha" data-olho="recuperar-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <label for="recuperar-confirmar">Confirmar nova senha</label>
+            <input id="recuperar-confirmar" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+            <button type="submit" class="btn primary full" id="recuperar-confirmar-botao">Redefinir senha</button>
+          </div>
+          <p class="tm-auth-info" id="recuperar-info" hidden role="status" aria-live="polite"></p>
+          <p class="error" id="recuperar-erro" hidden role="alert"></p>
+        </form>
+        <button type="button" class="tm-auth-link tm-voltar-login" id="recuperar-voltar">← Voltar para o login</button>
+      </section>
+      <section id="auth-painel-cadastro" aria-label="Criar conta" hidden>
+        <form id="form-cadastro">
+          <label for="cadastro-email">Seu e-mail</label>
+          <input id="cadastro-email" type="email" autocomplete="email" maxlength="254" placeholder="seuemail@empresa.com" required>
+          <button type="button" class="btn secondary full tm-enviar-codigo" id="cadastro-enviar">Enviar código por e-mail</button>
+          <div id="cadastro-etapa2" hidden>
+            <label for="cadastro-codigo">Código recebido (6 dígitos)</label>
+            <input id="cadastro-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
+            <label for="cadastro-nome">Nome completo</label>
+            <input id="cadastro-nome" autocomplete="name" minlength="3" maxlength="100" required>
+            <label for="cadastro-cpf">CPF do funcionário</label>
+            <input id="cadastro-cpf" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" required>
+            <p class="tm-auth-dica">O nome e o CPF precisam conferir com o cadastro de funcionários do MobPonto. Seu usuário será gerado automaticamente, como Joao.417427.</p>
+            <label for="cadastro-senha">Criar senha (mínimo de 12 caracteres)</label>
+            <div class="tm-senha-campo">
+              <input id="cadastro-senha" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+              <button type="button" class="tm-mostrar-senha" data-olho="cadastro-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <label for="cadastro-confirmar">Confirmar senha</label>
+            <input id="cadastro-confirmar" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+            <button type="submit" class="btn primary full" id="cadastro-confirmar-botao">Solicitar acesso</button>
+          </div>
+          <p class="tm-auth-info" id="cadastro-info" hidden role="status" aria-live="polite"></p>
+          <p class="error" id="cadastro-erro" hidden role="alert"></p>
+        </form>
+        <div id="cadastro-concluido" class="tm-cadastro-concluido" hidden role="status" aria-live="polite">
+          <strong>Solicitação enviada!</strong>
+          <p>Seu usuário de acesso foi gerado:</p>
+          <div class="tm-usuario-gerado">
+            <input id="cadastro-usuario-gerado" type="text" readonly aria-label="Seu novo usuário">
+            <button type="button" class="btn secondary" id="cadastro-copiar-usuario">Copiar</button>
+          </div>
+          <p>Aguarde a aprovação do administrador. Você também receberá seu usuário por e-mail quando a conta for aprovada.</p>
+          <button type="button" class="btn primary full" id="cadastro-ir-login">Voltar ao login</button>
+        </div>
+        <button type="button" class="tm-auth-link tm-voltar-login" id="cadastro-voltar">← Voltar para o login</button>
+      </section>
+      <p class="login-foot">A sessão termina à meia-noite. Acesso restrito a usuários autorizados.</p>
     </div>
   </div>
 
   <div class="modal-overlay" id="modal-mensagem" hidden aria-modal="true" role="dialog">
     <div class="message-card"><div class="message-icon" id="msg-icon">i</div><h2 id="msg-titulo">Aviso</h2><p id="msg-texto"></p><button class="btn primary" id="msg-fechar">Entendi</button></div>
   </div>
+
+  <!-- Confirmação própria do site: sem alertas do navegador ou textos de auditoria. -->
+  <dialog id="modal-excluir-carta" class="tm-modal-excluir" aria-labelledby="tm-confirma-exclusao-texto">
+    <p id="tm-confirma-exclusao-texto">Certeza que deseja excluir esta carta?</p>
+    <div class="tm-exclusao-acoes">
+      <button id="tm-cancelar-exclusao" type="button" class="btn secondary">Cancelar</button>
+      <button id="tm-confirmar-exclusao" type="button" class="btn tm-btn-danger">Excluir</button>
+    </div>
+  </dialog>
+
+  <dialog id="modal-decisao-usuario" class="tm-modal-excluir" aria-labelledby="tm-pergunta-usuario">
+    <p id="tm-pergunta-usuario">Confirmar esta decisão?</p>
+    <p id="tm-erro-usuario" class="tm-erro-usuario" role="alert" hidden></p>
+    <div class="tm-exclusao-acoes">
+      <button id="tm-cancelar-decisao" type="button" class="btn secondary">Cancelar</button>
+      <button id="tm-confirmar-decisao" type="button" class="btn primary">Confirmar</button>
+    </div>
+  </dialog>
 
   <div class="shell" id="shell" hidden>
     <aside class="sidebar">
@@ -36,6 +130,7 @@
         <button class="nav-button" data-tab="folgas"><span class="nav-icon">▣</span> Controle de folgas</button>
         <button class="nav-button" data-tab="cartas" data-admin><span class="nav-icon">▤</span> Cartas de ponto</button>
         <button class="nav-button" data-tab="pendentes"><span class="nav-icon">✓</span> Cartas pendentes <span id="badge-pendentes" class="count-badge">0</span></button>
+        <button class="nav-button" data-tab="usuarios" data-admin><span class="nav-icon">♙</span> Gerenciar usuários <span id="badge-usuarios" class="count-badge">0</span></button>
       </nav>
       <div class="sidebar-bottom"><span id="perfil-tag">Perfil</span><button class="logout" id="btn-sair">Sair da conta</button></div>
     </aside>
@@ -45,7 +140,7 @@
       <main>
         <section id="sec-horas" class="page active">
           <div id="visao-horas-encarregado" class="visao-horas-encarregado" hidden>
-            <div class="section-header"><div><h2>Dias de folga por funcionário</h2><p>Consulta rápida do banco de horas dos últimos três meses.</p></div><button type="button" class="btn secondary" id="enc-recarregar-horas">Atualizar lista</button></div>
+            <div class="section-header"><div><h2>Dias de folga por funcionário</h2><p>Consulta rápida do banco de horas dos últimos três meses, ordenada pelos dias de folga disponíveis.</p></div><button type="button" class="btn secondary" id="enc-recarregar-horas">Atualizar lista</button></div>
             <div class="panel painel-dias-folga"><label class="sr-only" for="enc-busca-funcionario">Buscar funcionário</label>
               <input id="enc-busca-funcionario" class="enc-busca-funcionario" type="search" placeholder="Buscar funcionário…" autocomplete="off">
               <div class="enc-lista-cabecalho"><span>Funcionário</span><span>Dias de folga*</span></div>
@@ -66,12 +161,17 @@
           <div class="section-header"><div><h2>Planejamento de folgas</h2><p>Registre a decisão do encarregado. Este controle não lança automaticamente abonos ou compensações no MobPonto.</p></div></div>
           <div class="two-columns">
             <div class="panel"><h3>Programar folga</h3><form id="form-folga" class="form-grid">
-              <label>Funcionário <input id="folga-funcionario" list="lista-funcionarios" autocomplete="off" required placeholder="Digite ou selecione um nome"></label>
-              <label>Empresa <select id="folga-empresa" required><option value="">Selecione uma empresa</option></select></label>
+              <div class="wide carta-campo-autocomplete">
+                <label for="folga-funcionario">Colaborador</label>
+                <div class="carta-autocomplete-relativo"><input id="folga-funcionario" autocomplete="off" required placeholder="Nome do colaborador" role="combobox" aria-autocomplete="list" aria-controls="folga-sugestoes-funcionario" aria-expanded="false"><div id="folga-sugestoes-funcionario" class="carta-sugestoes" role="listbox" hidden></div></div>
+              </div>
+              <input id="folga-empresa" type="hidden">
+              <p class="wide carta-empresa-identificada carta-empresa-aviso" id="folga-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
               <label>Data da folga <input id="folga-data" type="date" required></label>
               <label>Horas previstas <input id="folga-horas" type="text" value="08:00" pattern="[0-9]{1,2}:[0-5][0-9]" required placeholder="08:00"></label>
+              <small class="wide carta-dica-data">A data pode ser alterada. Se o ano for digitado como 26, será ajustado para 2026.</small>
               <label class="wide">Justificativa / observações <textarea id="folga-obs" rows="3" maxlength="500" placeholder="Ex.: compensação sujeita à confirmação do RH"></textarea></label>
-              <button class="btn primary wide" type="submit" id="salvar-folga">Registrar planejamento</button>
+              <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="salvar-folga">Registrar planejamento</button></div>
             </form></div>
             <div class="panel"><h3>Critérios para avaliação</h3><div class="info-row"><span>01</span><div><b>Conferir o banco de horas compensável</b><p>Horas extras do mês não provam um saldo disponível para folga.</p></div></div><div class="info-row"><span>02</span><div><b>Verificar a escala</b><p>Planeje a folga sem comprometer a cobertura do setor.</p></div></div><div class="info-row"><span>03</span><div><b>Validar a compensação</b><p>Alinhe com RH e política da empresa antes de marcar como concedida.</p></div></div></div>
           </div>
@@ -84,21 +184,26 @@
 
           <div class="subpage active" id="sub-controle">
             <div class="two-columns">
-              <div class="panel"><h3>Registrar nova carta</h3><form id="form-carta" class="form-grid">
-                <label class="wide">Colaborador <input id="carta-funcionario" list="lista-funcionarios" required placeholder="Nome do colaborador"></label>
+              <div class="panel"><h3 id="titulo-form-carta">Registrar nova carta</h3><form id="form-carta" class="form-grid">
+                <div class="wide carta-campo-autocomplete">
+                  <label for="carta-funcionario">Colaborador</label>
+                  <div class="carta-autocomplete-relativo"><input id="carta-funcionario" autocomplete="off" required placeholder="Nome do colaborador" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-funcionario" aria-expanded="false"><div id="carta-sugestoes-funcionario" class="carta-sugestoes" role="listbox" hidden></div></div>
+                </div>
+                <p class="wide carta-empresa-identificada" id="carta-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
                 <label>Data da ocorrência <input id="carta-ocorrencia" type="date" required></label>
-                <label>Entregue ao responsável <input id="carta-responsavel" list="lista-responsaveis" placeholder="Ex.: PEDRINHO"></label>
-                <label>Data de correção <input id="carta-correcao" type="date"></label>
+                <label>Data de conferência / correção <input id="carta-correcao" type="date"></label>
+                <small class="wide carta-dica-data">Os campos de data podem ser alterados. Se o ano for digitado como 26, será ajustado para 2026.</small>
+                <div class="carta-campo-autocomplete">
+                  <label for="carta-responsavel">Entregue ao responsável</label>
+                  <div class="carta-autocomplete-relativo"><input id="carta-responsavel" autocomplete="off" placeholder="Ex.: PEDRINHO" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-responsavel" aria-expanded="false"><div id="carta-sugestoes-responsavel" class="carta-sugestoes" role="listbox" hidden></div></div>
+                </div>
                 <label>Assinado <select id="carta-assinado"><option value="NÃO">NÃO</option><option value="SIM">SIM</option></select></label>
-                <label>Empresa <select id="carta-empresa"><option value="">Não informado</option></select></label>
-                <label>Motivo <input id="carta-motivo" maxlength="300" placeholder="Ex.: divergência no horário"></label>
-                <label class="wide">Adicional <input id="carta-adicional" maxlength="300" placeholder="Campo adicional do Excel"></label>
-                <label class="wide">Observações <textarea id="carta-obs" rows="2" maxlength="2000"></textarea></label>
-                <button class="btn primary wide" type="submit" id="btn-salvar-carta">Salvar carta</button>
+                <label class="wide">Observações / adicional <textarea id="carta-obs" rows="2" maxlength="2000" placeholder="Informações complementares"></textarea></label>
+                <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="btn-salvar-carta">Salvar carta</button><button class="btn subtle" type="button" id="btn-cancelar-edicao-carta" hidden>Cancelar edição</button></div>
               </form></div>
               <div class="panel"><h3>Resumo das cartas</h3><div class="mini-metrics"><div><strong id="cartas-total">0</strong><span>Registradas</span></div><div><strong id="cartas-pendentes">0</strong><span>Sem assinatura</span></div><div><strong id="cartas-assinadas">0</strong><span>Assinadas</span></div></div><div class="note">As colunas originais da sua aba no Google Sheets são mantidas. Novos campos do Excel são acrescentados ao final, sem sobrescrever históricos.</div></div>
             </div>
-            <div class="panel"><div class="panel-top"><h3>Histórico e controle</h3><div class="filter-row"><input type="search" id="filtro-cartas" placeholder="Buscar nome ou responsável…"><select id="filtro-cartas-status"><option value="">Todos os status</option><option value="NÃO">Não assinadas</option><option value="SIM">Assinadas</option></select><input type="month" id="filtro-cartas-mes" aria-label="Mês das cartas"><button class="btn subtle" id="limpar-filtro-cartas" type="button">Limpar</button></div></div><div class="table-scroll"><table><thead><tr><th>Ocorrência</th><th>Colaborador</th><th>Entregue ao responsável</th><th>Correção</th><th>Assinado</th><th>Adicional</th><th></th></tr></thead><tbody id="tbody-cartas"></tbody></table></div></div>
+            <div class="panel"><div class="panel-top"><h3>Histórico e controle</h3><div class="filter-row"><input type="search" id="filtro-cartas" placeholder="Buscar nome ou responsável…"><select id="filtro-cartas-status"><option value="">Todos os status</option><option value="NÃO">Não assinadas</option><option value="SIM">Assinadas</option></select><input type="month" id="filtro-cartas-mes" aria-label="Mês das cartas"><button class="btn subtle" id="limpar-filtro-cartas" type="button">Limpar</button></div></div><div class="table-scroll"><table><thead><tr><th>Ocorrência</th><th>Colaborador</th><th>Entregue ao responsável</th><th>Correção</th><th>Assinado</th><th>Observações</th><th>Ações</th></tr></thead><tbody id="tbody-cartas"></tbody></table></div></div>
           </div>
 
           <div class="subpage" id="sub-capa">
@@ -135,6 +240,28 @@
         </section>
 
         <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Cartas pendentes de assinatura</h2><p>O encarregado pode confirmar somente as cartas que ainda não estão assinadas.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div><div class="panel"><div id="lista-pendentes" class="pending-list"></div></div></section>
+        <section id="sec-usuarios" class="page" data-admin aria-labelledby="titulo-usuarios">
+          <div class="section-header">
+            <div><h2 id="titulo-usuarios">Gerenciar usuários</h2><p>Os cadastros só recebem acesso após a confirmação do e-mail e sua aprovação.</p></div>
+            <button class="btn secondary" type="button" id="btn-atualizar-usuarios">Atualizar solicitações</button>
+          </div>
+          <div class="tm-usuarios-resumo" aria-live="polite">
+            <div class="tm-usuarios-stat"><span>Aguardando aprovação</span><strong id="quantidade-usuarios-pendentes">0</strong></div>
+            <div class="tm-usuarios-stat"><span>Contas ativas</span><strong id="quantidade-usuarios-ativos">0</strong></div>
+          </div>
+          <div class="panel tm-usuarios-painel">
+            <h3>Solicitações pendentes</h3>
+            <div id="usuarios-pendentes" class="tm-usuarios-lista" aria-live="polite"><p class="empty">Carregando solicitações…</p></div>
+          </div>
+          <div class="panel tm-usuarios-painel">
+            <h3>Usuários com acesso</h3>
+            <p class="tm-usuarios-nota">Cadastros novos começam como Encarregado. O administrador pode alterar o perfil de contas ativas; a mudança exige um novo login.</p>
+            <div id="usuarios-ativos" class="tm-usuarios-lista"><p class="empty">Carregando usuários…</p></div>
+          </div>
+          <details class="panel tm-usuarios-recusados"><summary>Solicitações recusadas (<span id="quantidade-usuarios-recusados">0</span>)</summary>
+            <div id="usuarios-recusados" class="tm-usuarios-lista"><p class="empty">Nenhuma solicitação recusada.</p></div>
+          </details>
+        </section>
         <datalist id="lista-funcionarios"></datalist><datalist id="lista-responsaveis"></datalist>
       </main>
     </div>
