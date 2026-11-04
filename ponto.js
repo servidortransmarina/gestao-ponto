@@ -1365,3 +1365,4 @@ document.addEventListener('DOMContentLoaded',()=>{
   setInterval(()=>{if(APP.sessao&&APP.sessao.dataLogin!==today())encerrarSessaoLocal();},20000);
   verificarSessao();
 });
+ 
