@@ -4,6 +4,74 @@ const STORAGE_KEY = 'transmarina_gestao_sessao_v2';
 const APP = {sessao:null, cartas:[], pendentes:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
 const $ = id => document.getElementById(id);
 const norm = x => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+// (FALTA) identifica o tipo da carta, mas a busca de empresa e responsável
+// usa o nome real do colaborador, sem exigir um novo cadastro no MobPonto.
+function separarNomeCarta(valor) {
+  const texto=String(valor??'').trim();
+  // Compatível também com as cartas antigas do Excel: "NOME(FALTA)".
+  const inicio=/^\(\s*FALTA\s*\)\s*/i;
+  const fim=/\s*\(\s*FALTA\s*\)$/i;
+  const falta=inicio.test(texto)||fim.test(texto);
+  const nomeBase=texto.replace(inicio,'').replace(fim,'').replace(/\s+/g,' ').trim();
+  return {falta,nomeBase};
+}
+function formatarNomeCarta(nomeBase,falta=false) {
+  const nome=String(nomeBase??'').replace(/\s+/g,' ').trim();
+  return falta&&nome?`(FALTA) ${nome}`:nome;
+}
+
+// V30.12 — Padronização pelo nome completo oficial quando a identificação for única.
+// (FALTA) indica somente o tipo de carta, preservado no histórico individual.
+// Não inventar a identidade de colaboradores antigos fora da base.
+const partículasNomeCarta=new Set(['DA','DE','DO','DAS','DOS','E']);
+function partesNomeCarta(valor) {
+  return norm(separarNomeCarta(valor).nomeBase)
+    .replace(/[^A-Z0-9\s]/g,' ').split(/\s+/)
+    .filter(p=>p&&!partículasNomeCarta.has(p));
+}
+function correspondeAbreviacaoCarta(informado,oficial) {
+  const a=partesNomeCarta(informado),b=partesNomeCarta(oficial);
+  if(a.length<2||a.length>b.length||b.length<2||a[0]!==b[0])return false;
+  const equiv=(curto,longo)=>curto===longo||(curto.length===1&&longo.startsWith(curto));
+  // Nome completo ou prefixo inequívoco, por exemplo José Carlos → José Carlos Vieira.
+  if(a.every((parte,i)=>equiv(parte,b[i])))return true;
+  // A abreviação também pode omitir um nome intermediário, desde que mantenha
+  // o último sobrenome: "José F. Santos" → "José Fernando Silva Santos".
+  if(a.length<3||a[a.length-1]!==b[b.length-1])return false;
+  let pos=1;
+  for(let i=1;i<a.length-1;i++) {
+    while(pos<b.length-1&&!equiv(a[i],b[pos]))pos++;
+    if(pos>=b.length-1)return false;
+    pos++;
+  }
+  return true;
+}
+function localizarNomeCartaNaBase(nome) {
+  const fontes=APP.funcionarios.length?APP.funcionarios:APP.saldos;
+  const chave=norm(separarNomeCarta(nome).nomeBase).replace(/\s+/g,' ');
+  const matchesExatos=fontes.filter(f=>norm(f.nome).replace(/\s+/g,' ')===chave);
+  const matches=matchesExatos.length?matchesExatos:
+    fontes.filter(f=>correspondeAbreviacaoCarta(nome,f.nome));
+  // Evitar adivinhar a empresa entre homônimos ou abreviações ambíguas.
+  const unicos=[...new Map(matches.map(f=>[
+    norm(f.nome)+'|'+norm(f.empresa),f
+  ])).values()];
+  return {registro:unicos.length===1?unicos[0]:null,ambiguo:unicos.length>1};
+}
+function chaveFuncionarioCarta(nome) {
+  const base=norm(separarNomeCarta(nome).nomeBase).replace(/\s+/g,' ');
+  const localizado=localizarNomeCartaNaBase(nome);
+  return localizado.registro?'OFICIAL|'+norm(localizado.registro.nome)+'|'+norm(localizado.registro.empresa):
+    'LIVRE|'+base;
+}
+// Ao selecionar um funcionário, usar sempre o nome COMPLETO da base.
+// Jamais reaproveitar uma abreviação histórica na sugestão do formulário.
+function nomeHistoricoPreferidoCarta(nome) {
+  const {falta,nomeBase}=separarNomeCarta(nome);
+  const localizado=localizarNomeCartaNaBase(nomeBase);
+  return formatarNomeCarta(localizado.registro?.nome||nomeBase,falta);
+}
+
 const esc = v => String(v == null?'':v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => {const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
 const mesAtual = () => today().slice(0,7);
@@ -251,8 +319,58 @@ function configurarAcessoEmail(){
   });
 }
 
+// O servidor usa o dia de Brasília. Datas locais do navegador podem ser diferentes
+// em viagens, fusos e computadores com horários desajustados.
+function diaSessaoBrasil() {
+  const partes=new Intl.DateTimeFormat('en-US',{
+    timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'
+  }).formatToParts(new Date());
+  const p=Object.fromEntries(partes.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+// Enquanto o Apps Script valida o token salvo, não mostrar um formulário de
+// login que dá a impressão de que F5 desconectou o usuário.
+function mostrarRestauracaoSessao(mostrar, falhou=false) {
+  const form=$('form-login');
+  if(!form)return;
+  let area=$('tm-restaurando-sessao');
+  if(!area) {
+    area=document.createElement('div');
+    area.id='tm-restaurando-sessao';
+    area.setAttribute('role','status');
+    area.setAttribute('aria-live','polite');
+    area.style.cssText='text-align:center;padding:18px 8px 24px;color:#294967;line-height:1.6';
+    form.parentElement.insertBefore(area,form);
+  }
+  area.replaceChildren();
+  if(mostrar) {
+    const titulo=document.createElement('strong');
+    titulo.textContent=falhou?'Não foi possível verificar sua sessão.':'Restaurando seu acesso…';
+    area.appendChild(titulo);
+    if(falhou) {
+      const dica=document.createElement('p');
+      dica.textContent='A sessão foi preservada. Tente novamente quando a conexão estiver normal.';
+      area.appendChild(dica);
+      const tentar=document.createElement('button');
+      tentar.type='button';tentar.className='btn primary';
+      tentar.textContent='Tentar novamente';
+      tentar.addEventListener('click',verificarSessao);
+      area.appendChild(tentar);
+      const trocar=document.createElement('button');
+      trocar.type='button';trocar.className='btn subtle';
+      trocar.textContent='Entrar com outra conta';
+      trocar.style.marginLeft='8px';
+      trocar.addEventListener('click',encerrarSessaoLocal);
+      area.appendChild(trocar);
+    }
+  }
+  area.hidden=!mostrar;
+  form.hidden=mostrar;
+}
 function encerrarSessaoLocal() {
-  APP.sessao=null;localStorage.removeItem(STORAGE_KEY);telaLogin(true);$('login-senha').value='';
+  APP.sessao=null;localStorage.removeItem(STORAGE_KEY);
+  mostrarRestauracaoSessao(false);
+  telaLogin(true);$('login-senha').value='';
 }
 async function logout() {
   try{await api('logout');}catch(e){console.warn('Logout remoto:',e.message);}
@@ -270,15 +388,38 @@ async function login(event) {
   }catch(e){$('login-erro').textContent=e.message;$('login-erro').hidden=false;}
 }
 async function verificarSessao() {
+  let salvo;
+  try {salvo=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');}
+  catch(e){return encerrarSessaoLocal();}
+  // O login vale até 23:59:59 do dia de Brasília, incluindo quantos F5 desejar.
+  if(!salvo?.token || (salvo.dataLogin && salvo.dataLogin!==diaSessaoBrasil()))
+    return encerrarSessaoLocal();
+  APP.sessao=salvo;
+  telaLogin(true);
+  mostrarRestauracaoSessao(true);
   try {
-    const salvo=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
-    if(!salvo?.token || salvo.dataLogin!==today())return encerrarSessaoLocal();
-    APP.sessao=salvo;
     const r=await api('validarSessao');
-    APP.sessao.perfil=r.perfil;APP.sessao.usuario=r.usuario;
+    // Só o Apps Script decide se o token continua válido. Não usar uma sessão
+    // que o servidor informou estar vencida ou sem perfil.
+    if(r.dataLogin!==diaSessaoBrasil() || !['ADM','ENCARREGADO'].includes(r.perfil)) {
+      encerrarSessaoLocal();return;
+    }
+    // Preservar o Nome Exibição usado pela fila de cartas rápidas. A API
+    // validarSessao responde com login técnico; trocá-lo pelo nome de login
+    // faria os envios pendentes parecerem de outra conta depois do F5.
+    APP.sessao={...salvo,perfil:r.perfil,usuario:salvo.usuario||r.usuario,dataLogin:r.dataLogin};
     localStorage.setItem(STORAGE_KEY,JSON.stringify(APP.sessao));
+    mostrarRestauracaoSessao(false);
     await iniciarPainel();
-  }catch(e){console.warn('Sessão não validada:',e.message);encerrarSessaoLocal();}
+  } catch(e) {
+    console.warn('Não foi possível restaurar a sessão:',e.message);
+    // Rejeição explícita da sessão ou bloqueio da conta: exigir login novamente.
+    // Falha temporária, timeout ou erro ao carregar o painel: NÃO apagar token.
+    if(/sessão.*(inválid|expirad|ausente|encontrada)|usuário desativado/i.test(String(e.message)))
+      return encerrarSessaoLocal();
+    telaLogin(true);
+    mostrarRestauracaoSessao(true,true);
+  }
 }
 async function iniciarPainel() {
   telaLogin(false);
@@ -290,9 +431,11 @@ async function iniciarPainel() {
   $('usuario-nome').textContent=APP.sessao.usuario;$('avatar').textContent=(APP.sessao.usuario||'GP').split(' ').slice(0,2).map(s=>s[0]).join('').toUpperCase();
   $('data-hoje').textContent=fmtDia();
   escolherAba('horas');
-  const operacoes=[carregarSaldos(),carregarFolgas(),carregarPendentes()];
+  const operacoes=[carregarSaldos(),carregarFolgas()];
   if(adm)operacoes.push(carregarCartas(),carregarFuncionarios(),carregarUsuarios());
+  else operacoes.push(carregarPendentes());
   await Promise.allSettled(operacoes);
+  if(adm)reativarFilaDeCartas();
 }
 function escolherAba(tab) {
   if(['cartas','usuarios'].includes(tab)&&APP.sessao?.perfil!=='ADM')return;
@@ -406,7 +549,19 @@ async function confirmarDecisaoUsuario() {
       :await api(tipo==='aprovar'?'aprovarCadastro':'recusarCadastro',{email});
     $('modal-decisao-usuario').close();decisaoUsuario=null;
     feedbackAtualizacao(r.mensagem+(r.notificacao===false?' Não foi possível enviar a notificação por e-mail.':''));
-    await carregarUsuarios();
+    if(tipo==='perfil') {
+      const conta=(APP.usuarios.ativos||[]).find(u=>u.usuario===usuario);
+      if(conta)conta.perfil=perfil;
+    } else {
+      const lista=APP.usuarios.pendentes||[];
+      const conta=lista.find(u=>u.email===email);
+      APP.usuarios.pendentes=lista.filter(u=>u.email!==email);
+      if(conta){
+        if(tipo==='aprovar') {conta.perfil='ENCARREGADO';APP.usuarios.ativos.unshift(conta);}
+        else APP.usuarios.recusados.unshift(conta);
+      }
+    }
+    renderUsuarios();
   } catch(e) {
     $('tm-erro-usuario').textContent=e.message||'Não foi possível concluir a solicitação.';
     $('tm-erro-usuario').hidden=false;
@@ -628,6 +783,11 @@ async function carregarFuncionarios() {
     const r=await api('getFuncionarios');APP.funcionarios=r.dados||[];
     $('lista-funcionarios').innerHTML=APP.funcionarios.map(x=>`<option value="${esc(x.nome)}" label="${esc(x.empresa)}"></option>`).join('');
     atualizarEmpresas();atualizarEmpresaCarta();
+    if(APP.cartas.length){
+      reconstruirHistoricoResponsaveisCarta();
+      if(APP.subaba==='relatorios')renderRelatorios();
+      if(APP.subaba==='capa')renderCapa();
+    }
   }catch(e){console.warn(e.message);}
 }
 function encontrarFuncionario(nome,empresa) {
@@ -637,17 +797,18 @@ async function salvarFolga(e) {
   e.preventDefault();
   try{
     const nome=$('folga-funcionario').value.trim(),empresa=$('folga-empresa').value;
-    // A empresa vem do cadastro; não aceitar funcionários não identificados.
     const funcionario=funcionariosParaFolga().find(f=>norm(f.nome)===norm(nome)&&f.empresa===empresa);
     if(!funcionario){atualizarEmpresaFolga();throw Error('Selecione um funcionário da lista para identificar a empresa.');}
     if(!normalizarAnoDaData($('folga-data')))throw Error('Confira a data da folga.');
-    const dados={funcionario:funcionario.nome,empresa:funcionario.empresa,cpf:funcionario.cpf||'',dataFolga:$('folga-data').value,
-      horasPlanejadas:$('folga-horas').value.trim(),observacoes:$('folga-obs').value.trim()};
-    await api('salvarFolga',{dados});
-    $('form-folga').reset();$('folga-horas').value='08:00';
-    atualizarEmpresaFolga();
-    await carregarFolgas();showMessage('Folga registrada como PLANEJADA.','Planejamento salvo');
-  }catch(err){showMessage(err.message,'Não foi possível registrar',true);}
+    const dados={funcionario:funcionario.nome,empresa:funcionario.empresa,cpf:funcionario.cpf||'',
+      dataFolga:$('folga-data').value,horasPlanejadas:$('folga-horas').value.trim(),
+      observacoes:$('folga-obs').value.trim()};
+    const r=await api('salvarFolga',{dados});
+    if(!r.folga)throw Error('A gravação não foi confirmada com os dados da folga. Atualize a lista para verificar.');
+    APP.folgas.unshift(r.folga);renderFolgas();
+    $('form-folga').reset();$('folga-horas').value='08:00';atualizarEmpresaFolga();
+    feedbackAtualizacao('Folga salva no Google Sheets.');return true;
+  }catch(err){showMessage(err.message,'Não foi possível registrar',true);return false;}
 }
 async function carregarFolgas() {
   try{APP.folgas=(await api('getFolgas')).dados||[];renderFolgas();}
@@ -662,18 +823,118 @@ function renderFolgas() {
   }).join(''):'<tr><td colspan="6" class="empty">Nenhuma folga registrada neste filtro.</td></tr>';
 }
 async function mudarStatusFolga(id,status) {
-  try{await api('alterarFolga',{idFolga:id,status});await carregarFolgas();showMessage('Status atualizado para '+status+'.');}
-  catch(e){showMessage(e.message,'Falha ao atualizar',true);}
+  try{
+    const r=await api('alterarFolga',{idFolga:id,status});
+    if(r.status!==status)throw Error('O status não foi confirmado pelo servidor. Atualize a lista.');
+    const folga=APP.folgas.find(f=>f.id===id);
+    if(folga)folga.status=r.status;
+    renderFolgas();feedbackAtualizacao('Status atualizado para '+status+'.');return true;
+  }catch(e){showMessage(e.message,'Falha ao atualizar',true);return false;}
 }
 
 async function carregarCartas() {
-  if(APP.sessao?.perfil!=='ADM')return;
-  try{APP.cartas=(await api('getDadosADM')).dados||[];renderCartas();if(APP.subaba==='capa')renderCapa();if(APP.subaba==='relatorios')renderRelatorios();atualizarResponsaveis();return true;}
-  catch(e){$('tbody-cartas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;return false;}
+  if(APP.sessao?.perfil!=='ADM')return false;
+  try{
+    APP.cartas=(await api('getDadosADM')).dados||[];
+    renderCartas();
+    if(APP.subaba==='capa')renderCapa();
+    if(APP.subaba==='relatorios')renderRelatorios();
+    atualizarResponsaveis();
+    atualizarPendentesAdmLocal();
+    return true;
+  }catch(e){$('tbody-cartas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;return false;}
 }
+function atualizarPendentesAdmLocal() {
+  if(APP.sessao?.perfil!=='ADM')return;
+  APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM');
+  $('badge-pendentes').textContent=APP.pendentes.length;
+  renderPendentes();
+}
+// V30.1 — aprendizado local baseado nas últimas confirmações efetivas de assinatura.
+// Não usar as cartas importadas do Excel como treinamento: elas não provam
+// qual usuário do site realmente confirmou a assinatura.
+let historicoResponsaveisCarta = new Map();
+const estadoSugestaoCarta = {colaborador:'',automatico:'',editadoManualmente:false};
+const chaveAprendizadoCarta = nome => chaveFuncionarioCarta(nome);
+
+function construirHistoricoResponsaveisCarta(cartas) {
+  const assinaturas = new Map();
+  for(const carta of cartas) {
+    if(carta.status !== 'SIM' || !String(carta.dataConfirmacao||'').trim())continue;
+    const funcionario=chaveAprendizadoCarta(carta.funcionario);
+    const responsavel=String(carta.responsavel||'').trim();
+    if(!funcionario || !responsavel)continue;
+    if(!assinaturas.has(funcionario))assinaturas.set(funcionario,[]);
+    assinaturas.get(funcionario).push({
+      nome:responsavel,
+      chave:chaveAprendizadoCarta(responsavel),
+      quando:String(carta.dataConfirmacao)
+    });
+  }
+  const padroes=new Map();
+  for(const [funcionario,eventos] of assinaturas) {
+    // O limite de 12 assinaturas recentes permite aprender mudanças de operação.
+    const recentes=eventos.sort((a,b)=>b.quando.localeCompare(a.quando)).slice(0,12);
+    const contagem=new Map();
+    for(const evento of recentes) {
+      const item=contagem.get(evento.chave)||{nome:evento.nome,quantidade:0};
+      item.quantidade++;contagem.set(evento.chave,item);
+    }
+    const colocados=[...contagem.values()].sort((a,b)=>b.quantidade-a.quantidade||a.nome.localeCompare(b.nome,'pt-BR'));
+    const maior=colocados[0];
+    const total=recentes.length;
+    const confiavel=maior && maior.quantidade>=2 && maior.quantidade/total>=0.6 &&
+      maior.quantidade>(colocados[1]?.quantidade||0);
+    padroes.set(funcionario,{total,maior,confiavel:!!confiavel});
+  }
+  return padroes;
+}
+function sugestaoResponsavelAprendida(nome,padroes=historicoResponsaveisCarta) {
+  return padroes.get(chaveAprendizadoCarta(nome))||null;
+}
+function reconstruirHistoricoResponsaveisCarta() {
+  historicoResponsaveisCarta=construirHistoricoResponsaveisCarta(APP.cartas);
+  aplicarAprendizadoResponsavelCarta();
+}
+function aplicarAprendizadoResponsavelCarta() {
+  const funcionario=$('carta-funcionario'),responsavel=$('carta-responsavel');
+  const aviso=$('carta-responsavel-aprendizado');
+  if(!funcionario||!responsavel||!aviso)return;
+  const nome=chaveAprendizadoCarta(funcionario.value);
+  if(nome!==estadoSugestaoCarta.colaborador) {
+    // Limpar apenas um palpite anterior: nunca apagar escolha escrita pelo usuário.
+    if(!estadoSugestaoCarta.editadoManualmente && estadoSugestaoCarta.automatico &&
+      responsavel.value===estadoSugestaoCarta.automatico)responsavel.value='';
+    estadoSugestaoCarta.colaborador=nome;
+    estadoSugestaoCarta.automatico='';
+  }
+  if(APP.cartaEditando||!nome || !identificarFuncionarioCarta(funcionario.value).nome) {
+    aviso.hidden=true;aviso.textContent='';return;
+  }
+  const padrao=sugestaoResponsavelAprendida(nome);
+  aviso.hidden=false;
+  aviso.classList.remove('carta-aprendizado-confiavel');
+  if(!padrao) {
+    aviso.textContent='Ainda não há assinaturas confirmadas no site para sugerir um responsável.';
+    return;
+  }
+  if(!padrao.confiavel) {
+    aviso.textContent=`Aprendendo com as assinaturas: ${padrao.total} confirmação(ões), ainda sem um responsável predominante. Preencha livremente.`;
+    return;
+  }
+  const melhor=padrao.maior;
+  if(!estadoSugestaoCarta.editadoManualmente && !responsavel.value.trim()) {
+    responsavel.value=melhor.nome;
+    estadoSugestaoCarta.automatico=melhor.nome;
+  }
+  aviso.classList.add('carta-aprendizado-confiavel');
+  aviso.textContent=`Sugestão: ${melhor.nome} (${melhor.quantidade} de ${padrao.total} confirmações recentes). Você pode alterar o nome.`;
+}
+
 function atualizarResponsaveis() {
   const lista=[...new Set(APP.cartas.map(x=>x.responsavel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   $('lista-responsaveis').innerHTML=lista.map(s=>`<option value="${esc(s)}"></option>`).join('');
+  reconstruirHistoricoResponsaveisCarta();
 }
 function filtroDeCartas({texto='',status='',mes=''}={}) {
   const busca=norm(texto);
@@ -691,18 +952,22 @@ function renderCartas() {
   const lista=filtroDeCartas({texto:$('filtro-cartas').value,status:$('filtro-cartas-status').value,mes:$('filtro-cartas-mes').value});
   const exibidas=lista.slice(0,200);
   $('tbody-cartas').innerHTML=exibidas.length?exibidas.map(c=>`<tr><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td><span class="status ${c.status==='SIM'?'concedida':'planejada'}">${esc(c.status)}</span></td><td>${esc(textoComplementarCarta(c)||'—')}</td><td><div class="cell-actions carta-acoes">${c.status!=='SIM'?`<button class="btn tiny subtle carta-assinar" data-id="${esc(c.id)}">Confirmar</button>`:''}<button class="btn tiny secondary carta-editar" data-id="${esc(c.id)}" type="button">Editar</button><button class="btn tiny carta-excluir" data-id="${esc(c.id)}" type="button" aria-label="Excluir carta de ${esc(c.funcionario)}">Excluir</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma carta encontrada.</td></tr>';
+  const enviando=cartasEmEnvioVisiveis();
+  if(enviando.length)$('tbody-cartas').insertAdjacentHTML('afterbegin',enviando.map(linhaCartaEmEnvio).join(''));
   if(lista.length>exibidas.length)$('tbody-cartas').innerHTML+=`<tr><td colspan="7" class="empty">Exibindo ${exibidas.length} de ${lista.length} cartas. Use os filtros para localizar outros registros.</td></tr>`;
 }
 function identificarFuncionarioCarta(nome) {
-  const chave=norm(nome);
-  if(!chave)return {erro:'Selecione um colaborador cadastrado para identificar a empresa.'};
-  const pessoas=APP.funcionarios.filter(f=>norm(f.nome)===chave);
-  const saldos=APP.saldos.filter(f=>norm(f.nome)===chave);
-  const registros=pessoas.length?pessoas:saldos;
-  if(!registros.length)return {erro:'Funcionário não encontrado na base atual.'};
-  const empresas=[...new Set(registros.map(f=>f.empresa).filter(Boolean))];
-  if(empresas.length!==1)return {erro:'Nome cadastrado em mais de uma empresa. Verifique o cadastro.'};
-  return {nome:registros[0].nome,empresa:empresas[0]};
+  const {falta,nomeBase}=separarNomeCarta(nome);
+  const nomeLimpo=nomeBase.replace(/\s+/g,' ').trim();
+  if(!nomeLimpo)return {erro:'Informe o nome do funcionário após (FALTA).'};
+  const localizado=localizarNomeCartaNaBase(nomeLimpo);
+  if(localizado.ambiguo) return {erro:'Esse nome abreviado corresponde a mais de um funcionário. Digite mais partes do nome.'};
+  if(!localizado.registro) {
+    // Colaboradores antigos/avulsos continuam permitidos, sem inventar empresa.
+    return {nome:formatarNomeCarta(nomeLimpo,falta),empresa:'',naoCadastrado:true};
+  }
+  return {nome:formatarNomeCarta(localizado.registro.nome,falta),empresa:localizado.registro.empresa,
+    nomeOficial:localizado.registro.nome};
 }
 function atualizarEmpresaCarta() {
   const nome=$('carta-funcionario').value.trim(),ident=identificarFuncionarioCarta(nome);
@@ -710,13 +975,17 @@ function atualizarEmpresaCarta() {
   const podePreservar=legado&&norm(legado.funcionario)===norm(nome);
   const empresa=ident.empresa||(podePreservar?legado.empresa:'');
   const p=$('carta-empresa-info');
-  p.textContent=empresa?'Empresa identificada automaticamente: '+empresa:(podePreservar?'Carta histórica sem empresa informada. É possível editar mantendo a informação original.':(nome?ident.erro:'Selecione um colaborador cadastrado para identificar a empresa.'));
+  p.textContent=empresa?'Empresa identificada automaticamente: '+empresa:(podePreservar?'Carta histórica sem empresa informada. É possível editar mantendo a informação original.':(ident.naoCadastrado?'Nome não encontrado na base: é permitido salvar a carta sem empresa identificada.':(nome?ident.erro:'Digite o nome do funcionário. As sugestões são opcionais.')));
   p.classList.toggle('carta-empresa-aviso',!empresa&&!!nome);
+  aplicarAprendizadoResponsavelCarta();
   return empresa;
 }
 function definirModoCarta(c=null) {
   fecharSugestoesCarta.forEach(fechar=>fechar());
   APP.cartaEditando=c?.id||null;
+  estadoSugestaoCarta.colaborador='';
+  estadoSugestaoCarta.automatico='';
+  estadoSugestaoCarta.editadoManualmente=false;
   $('titulo-form-carta').textContent=c?'Editar carta de ponto':'Registrar nova carta';
   $('btn-salvar-carta').textContent=c?'Salvar alterações':'Salvar carta';
   $('btn-cancelar-edicao-carta').hidden=!c;
@@ -732,12 +1001,101 @@ function definirModoCarta(c=null) {
 }
 function reexibirCartasLocais() {
   renderCartas();if(APP.subaba==='capa')renderCapa();if(APP.subaba==='relatorios')renderRelatorios();atualizarResponsaveis();
-  if(APP.sessao?.perfil==='ADM'){
-    APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM');
-    $('badge-pendentes').textContent=APP.pendentes.length;
-    renderPendentes();
+  atualizarPendentesAdmLocal();
+}
+// V30.2 — registro imediato no navegador; a confirmação vem somente do servidor.
+// Persistir a fila permite recuperar envios interrompidos sem duplicar cartas.
+const CHAVE_FILA_CARTAS='transmarina_cartas_envio_v30_2';
+let filaCartas=[];
+let envioCartasAtivo=false;
+let tmEnvioCartasTimer=null;
+function prepararFilaCartas() {
+  try {
+    const salvas=JSON.parse(localStorage.getItem(CHAVE_FILA_CARTAS)||'[]');
+    filaCartas=Array.isArray(salvas)?salvas.filter(x=>x&&/^CP-[0-9A-F]{32}$/.test(x.id)&&
+      typeof x.usuario==='string'&&x.dados&&typeof x.dados==='object').slice(0,80).map(x=>({
+        ...x,estado:x.estado==='erro'?'erro':'pendente'})):[];
+  } catch(_){filaCartas=[];}
+}
+function salvarFilaCartas() {
+  localStorage.setItem(CHAVE_FILA_CARTAS,JSON.stringify(filaCartas));
+}
+function filaCartasDaConta() {return filaCartas.filter(x=>x.usuario===APP.sessao?.usuario);}
+function criarIdentificadorCarta() {
+  // GitHub Pages usa HTTPS; gera 122 bits aleatórios sem reutilizar o CPF.
+  if(!crypto?.randomUUID)throw Error('O navegador não permite gerar um identificador seguro para a carta.');
+  return 'CP-'+crypto.randomUUID().replace(/-/g,'').toUpperCase();
+}
+function renderFilaCartas() {
+  const area=$('tm-fila-cartas');if(!area)return;
+  const items=filaCartasDaConta();area.hidden=!items.length;
+  if(!items.length){area.innerHTML='';return;}
+  const ocupadas=items.filter(x=>x.estado!=='erro');
+  const erros=items.filter(x=>x.estado==='erro');
+  area.innerHTML=`<div class="tm-fila-resumo">${ocupadas.length?'<span class="tm-spinner" aria-hidden="true"></span>':''}<span>${ocupadas.length?`${ocupadas.length} carta(s) aguardando confirmação no Google Sheets`:'Nenhum envio em andamento'}${erros.length?` · ${erros.length} com falha`:''}</span></div>`+
+    erros.map(x=>`<div class="tm-fila-erro"><div><strong>Não salva: ${esc(x.dados.funcionario)}</strong><small>${esc(x.erro||'Confira a conexão e tente novamente.')}</small></div><button type="button" class="btn tiny secondary tm-repetir-carta" data-id="${esc(x.id)}">Tentar novamente</button></div>`).join('');
+}
+function cartasEmEnvioVisiveis() {
+  const texto=norm($('filtro-cartas').value),status=$('filtro-cartas-status').value,mes=$('filtro-cartas-mes').value;
+  return filaCartasDaConta().filter(x=>{
+    const d=x.dados||{};
+    return (!status||d.assinado===status)&&(!mes||String(d.dataOcorrencia||'').slice(0,7)===mes)&&
+      (!texto||norm([d.funcionario,d.responsavel,d.observacoes].join(' ')).includes(texto));
+  });
+}
+function linhaCartaEmEnvio(item) {
+  const d=item.dados,erro=item.estado==='erro';
+  return `<tr class="tm-carta-linha-pendente ${erro?'tm-carta-com-erro':''}"><td class="mono">${fmtData(d.dataOcorrencia)}</td><td><strong>${esc(d.funcionario)}</strong></td><td>${esc(d.responsavel||'—')}</td><td class="mono">${fmtData(d.dataCorrecao)}</td><td><span class="tm-situacao-envio">${erro?'Falha ao salvar':'Enviando…'}</span></td><td>${esc(d.observacoes||'—')}</td><td>${erro?`<button type="button" class="btn tiny secondary tm-repetir-carta" data-id="${esc(item.id)}">Reenviar</button>`:'Aguardando confirmação'}</td></tr>`;
+}
+function agendarEnvioCartas() {
+  if(tmEnvioCartasTimer||envioCartasAtivo)return;
+  tmEnvioCartasTimer=setTimeout(()=>{tmEnvioCartasTimer=null;enviarFilaCartas();},230);
+}
+async function enviarFilaCartas() {
+  if(envioCartasAtivo||!APP.sessao||APP.sessao.perfil!=='ADM')return;
+  const lote=filaCartasDaConta().filter(x=>x.estado==='pendente').slice(0,12);
+  if(!lote.length)return;
+  envioCartasAtivo=true;
+  lote.forEach(x=>x.estado='enviando');salvarFilaCartas();renderFilaCartas();renderCartas();
+  try {
+    const r=await api('salvarCartasLote',{cartas:lote.map(x=>({id:x.id,dados:x.dados}))});
+    if(!Array.isArray(r.resultados))throw Error('Resposta do servidor incompleta. Reenvie para conferir a gravação.');
+    const respostas=new Map(r.resultados.map(x=>[x.id,x]));
+    let gravadas=0;
+    for(const item of lote) {
+      const resposta=respostas.get(item.id);
+      if(!resposta){item.estado='erro';item.erro='O servidor não confirmou esta carta.';continue;}
+      if(resposta.sucesso&&resposta.carta){
+        filaCartas=filaCartas.filter(x=>x.id!==item.id);
+        const idx=APP.cartas.findIndex(c=>c.id===resposta.carta.id);
+        if(idx>=0)APP.cartas[idx]=resposta.carta;
+        else APP.cartas.unshift(resposta.carta);
+        gravadas++;
+      }else{item.estado='erro';item.erro=resposta.erro||'Não foi possível gravar esta carta.';}
+    }
+    if(gravadas)feedbackAtualizacao(gravadas===1?'Carta salva no Google Sheets.':`${gravadas} cartas salvas no Google Sheets.`);
+  }catch(err){
+    // Não criar nova carta com outro ID: reenvios do mesmo ID são idempotentes.
+    lote.forEach(x=>{x.estado='erro';x.erro=err.message||'Erro de conexão.';});
+    feedbackAtualizacao('Envio não confirmado. Use “Tentar novamente”.',true);
+  }finally{
+    envioCartasAtivo=false;
+    salvarFilaCartas();renderFilaCartas();reexibirCartasLocais();
+    if(filaCartasDaConta().some(x=>x.estado==='pendente'))agendarEnvioCartas();
   }
 }
+function reenviarCartaPendente(id) {
+  const carta=filaCartasDaConta().find(x=>x.id===id);
+  if(!carta)return;
+  carta.estado='pendente';carta.erro='';salvarFilaCartas();renderFilaCartas();renderCartas();agendarEnvioCartas();
+}
+function reativarFilaDeCartas() {
+  // Chamado só depois de carregar o histórico: descarta pedidos já confirmados.
+  const existentes=new Set(APP.cartas.map(c=>c.id));
+  filaCartas=filaCartas.filter(x=>x.usuario!==APP.sessao.usuario||!existentes.has(x.id));
+  salvarFilaCartas();renderFilaCartas();renderCartas();agendarEnvioCartas();
+}
+
 async function salvarCarta(e) {
   e?.preventDefault();
   try {
@@ -746,19 +1104,33 @@ async function salvarCarta(e) {
     const anterior=APP.cartaEditando&&APP.cartas.find(c=>c.id===APP.cartaEditando);
     const mesmoNome=anterior&&norm(anterior.funcionario)===norm(nome);
     const empresa=ident.empresa||(mesmoNome?anterior.empresa:'');
-    if(!empresa&&!mesmoNome)throw Error(ident.erro||'Selecione um funcionário cadastrado.');
+    if(ident.erro)throw Error(ident.erro);
     const dados={funcionario:ident.nome||nome,empresa,
       dataOcorrencia:$('carta-ocorrencia').value,responsavel:$('carta-responsavel').value.trim(),
       dataCorrecao:$('carta-correcao').value,assinado:$('carta-assinado').value,
       observacoes:$('carta-obs').value.trim()};
     if(!dados.dataOcorrencia)throw Error('Informe a data da ocorrência.');
     const editando=APP.cartaEditando;
-    const r=editando?await api('editarCarta',{idCarta:editando,dados}):await api('salvarNovaCarta',{dados});
-    if(!r.carta)throw Error('O servidor não retornou os dados da carta. Atualize o histórico antes de continuar.');
-    if(editando){const idx=APP.cartas.findIndex(c=>c.id===editando);if(idx!==-1)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);}
-    else APP.cartas.unshift(r.carta);
-    definirModoCarta();reexibirCartasLocais();
-    feedbackAtualizacao(editando?'Carta atualizada com sucesso.':'Carta registrada com sucesso.');
+    if(editando){
+      const r=await api('editarCarta',{idCarta:editando,dados});
+      if(!r.carta)throw Error('O servidor não retornou a carta editada. Atualize o histórico.');
+      const idx=APP.cartas.findIndex(c=>c.id===editando);
+      if(idx!==-1)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);
+      definirModoCarta();reexibirCartasLocais();
+      feedbackAtualizacao('Alterações da carta salvas no Google Sheets.');
+      return true;
+    }
+    // Não bloquear o formulário enquanto o Apps Script grava a carta.
+    if(filaCartasDaConta().length>=60)throw Error('Há muitos lançamentos pendentes. Confira a conexão antes de continuar.');
+    const id=criarIdentificadorCarta();
+    filaCartas.push({id,usuario:APP.sessao.usuario,dados,estado:'pendente',erro:''});
+    try{salvarFilaCartas();}catch(err){filaCartas=filaCartas.filter(x=>x.id!==id);throw Error('Sem espaço para armazenar o envio com segurança.');}
+    const dataOcorrencia=dados.dataOcorrencia,dataCorrecao=dados.dataCorrecao;
+    definirModoCarta();
+    // Facilita inserir várias cartas do mesmo dia, como no Excel.
+    $('carta-ocorrencia').value=dataOcorrencia;$('carta-correcao').value=dataCorrecao;
+    $('carta-funcionario').focus({preventScroll:true});
+    renderFilaCartas();renderCartas();agendarEnvioCartas();
     return true;
   }catch(err){showMessage(err.message,'Falha ao salvar a carta',true);return false;}
 }
@@ -809,39 +1181,105 @@ async function excluirCarta(id) {
   }catch(e){showMessage(e.message,'Falha ao excluir carta',true);return false;}
 }
 async function carregarPendentes() {
+  // O administrador já tem a lista completa; consultar de novo só para as
+  // pendências duplicaria milhares de registros trafegando pela rede.
+  if(APP.sessao?.perfil==='ADM')return carregarCartas();
   try{
     APP.pendentes=((await api('getDadosEncarregado')).dados||[]).filter(c=>c.status!=='SIM');
-    $('badge-pendentes').textContent=APP.pendentes.length;renderPendentes();return true;
+    $('badge-pendentes').textContent=APP.pendentes.length;
+    renderPendentes();return true;
   }catch(e){$('lista-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
 }
 function renderPendentes() {
   $('lista-pendentes').innerHTML=APP.pendentes.length?APP.pendentes.map(c=>`<article class="pending-item"><div><span class="pending-date">${fmtData(c.dataOcorrencia)}</span><h4>${esc(c.funcionario)}</h4><p>${esc(c.motivo||'Carta aguardando assinatura')}${c.responsavel?' • Responsável: '+esc(c.responsavel):''}</p></div><button class="btn primary carta-assinar" data-id="${esc(c.id)}">Confirmar assinatura</button></article>`).join(''):'<div class="empty tall">Nenhuma carta pendente de assinatura.</div>';
 }
 async function confirmarCarta(id) {
-  try{await api('confirmarCarta',{idCarta:id});await Promise.all([carregarPendentes(),carregarCartas()]);showMessage('Assinatura confirmada e registrada no histórico.');}
-  catch(e){showMessage(e.message,'Não foi possível confirmar',true);}
+  try{
+    // Somente o retorno após a gravação definitiva confirma a operação.
+    // O servidor já devolve a carta atualizada; NÃO refazer duas consultas
+    // completas ao Sheets a cada clique.
+    const r=await api('confirmarCarta',{idCarta:id});
+    if(!r.carta)throw Error('O servidor confirmou sem devolver os dados. Atualize o histórico e confira a implantação do Apps Script.');
+    if(APP.sessao?.perfil==='ADM') {
+      const idx=APP.cartas.findIndex(c=>c.id===id);
+      if(idx>=0)APP.cartas[idx]=r.carta;
+      else APP.cartas.unshift(r.carta);
+      reexibirCartasLocais();
+    } else {
+      APP.pendentes=APP.pendentes.filter(c=>c.id!==id);
+      $('badge-pendentes').textContent=APP.pendentes.length;
+      renderPendentes();
+    }
+    feedbackAtualizacao(r.mensagem||'Assinatura confirmada.');
+    return true;
+  }catch(e){showMessage(e.message,'Não foi possível confirmar',true);return false;}
 }
 
 function cartasCapaFiltradas() {
   return filtroDeCartas({texto:$('filtro-capa').value,mes:$('filtro-capa-mes').value})
     .filter(c=>norm(c.status)==='NAO');
 }
+// V30.9 — Âncora da última caixa marcada, para Shift+clique como no Windows.
+// O Set controla apenas quais cartas estão selecionadas. A ordem de impressão
+// é definida separadamente: lançamento + agrupamento por funcionário.
+let ultimaCartaCapaMarcada = null;
+function alterarSelecaoCapa(id, marcar, comShift=false) {
+  const visiveis=cartasCapaFiltradas().slice(0,250);
+  const destino=visiveis.findIndex(c=>c.id===id);
+  const origem=comShift?visiveis.findIndex(c=>c.id===ultimaCartaCapaMarcada):-1;
+  if(origem>=0&&destino>=0) {
+    const passo=origem<=destino?1:-1;
+    // Parte da âncora rumo à carta clicada: isso preserva a ordem dos cliques
+    // inclusive ao selecionar de baixo para cima.
+    for(let i=origem;;i+=passo) {
+      const cartaId=visiveis[i].id;
+      if(marcar)APP.selecionadas.add(cartaId);
+      else APP.selecionadas.delete(cartaId);
+      if(i===destino)break;
+    }
+  } else {
+    if(marcar)APP.selecionadas.add(id);
+    else APP.selecionadas.delete(id);
+  }
+  ultimaCartaCapaMarcada=id;
+  renderCapa();
+}
 function atualizarTotalSelecionadas() {$('total-selecionadas').textContent=APP.selecionadas.size;}
 function renderCapa() {
   // Nunca deixe cartas assinadas na seleção, mesmo que sejam confirmadas após selecionar.
   const aindaPendentes=new Set(APP.cartas.filter(c=>norm(c.status)==='NAO').map(c=>c.id));
   for(const id of APP.selecionadas)if(!aindaPendentes.has(id))APP.selecionadas.delete(id);
+  if(ultimaCartaCapaMarcada&&!aindaPendentes.has(ultimaCartaCapaMarcada))ultimaCartaCapaMarcada=null;
   const filtradas=cartasCapaFiltradas(),arr=filtradas.slice(0,250);
-  $('tbody-capa').innerHTML=arr.length?arr.map(c=>`<tr><td><input type="checkbox" class="check-capa" data-id="${esc(c.id)}" ${APP.selecionadas.has(c.id)?'checked':''} aria-label="Selecionar ${esc(c.funcionario)}"></td><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td>${esc(c.status)}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">Nenhuma carta neste filtro.</td></tr>';
+  $('tbody-capa').innerHTML=arr.length?arr.map(c=>`<tr><td><input type="checkbox" class="check-capa" data-id="${esc(c.id)}" ${APP.selecionadas.has(c.id)?'checked':''} aria-label="Selecionar ${esc(c.funcionario)}" title="Shift + clique: selecionar intervalo"></td><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td>${esc(c.status)}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">Nenhuma carta neste filtro.</td></tr>';
   if(filtradas.length>arr.length)$('tbody-capa').innerHTML+=`<tr><td colspan="6" class="empty">Exibindo ${arr.length} de ${filtradas.length} cartas. Filtre por mês ou nome para localizar outros registros.</td></tr>`;
   $('check-todas-capa').checked=arr.length>0&&arr.every(c=>APP.selecionadas.has(c.id));
   atualizarTotalSelecionadas();
   $('imprimir-capa').disabled=APP.selecionadas.size===0;
 }
+// V30.10 — Os cartões vêm do backend em ordem inversa ao lançamento
+// (o mais recente primeiro). A capa deve seguir a sequência ORIGINAL de
+// lançamento, mas aproximando todas as cartas de um mesmo funcionário.
+// (FALTA) é um tipo de carta, não um funcionário diferente.
+function agruparCartasCapaPorLancamento(cartas) {
+  const porFuncionario=new Map();
+  for(const carta of cartas) {
+    const nomeBase=separarNomeCarta(carta.funcionario).nomeBase;
+    // Nome abreviado e completo devem ficar no mesmo grupo de impressão.
+    const grupo=nomeBase?chaveFuncionarioCarta(nomeBase):`CARTA:${carta.id}`;
+    if(!porFuncionario.has(grupo))porFuncionario.set(grupo,[]);
+    porFuncionario.get(grupo).push(carta);
+  }
+  return [...porFuncionario.values()].flat();
+}
 function imprimirCapa() {
-  // Apenas cartas não assinadas podem ser incluídas na capa.
-  const itens=APP.cartas.filter(c=>norm(c.status)==='NAO'&&APP.selecionadas.has(c.id))
-    .sort((a,b)=>String(a.dataOcorrencia||'').localeCompare(String(b.dataOcorrencia||'')));
+  // Imprimir apenas as cartas NÃO assinadas que foram marcadas.
+  // APP.cartas vem em ordem decrescente de lançamento; reverter recoloca
+  // na ordem original da planilha (do lançamento mais antigo ao mais novo).
+  // O Map preserva a posição da primeira carta de cada colaborador e agrupa
+  // as demais, mantendo a ordem de lançamento dentro de cada grupo.
+  const itens=agruparCartasCapaPorLancamento(APP.cartas.slice().reverse()
+    .filter(c=>norm(c.status)==='NAO'&&APP.selecionadas.has(c.id)));
   if(!itens.length)return showMessage('Selecione pelo menos uma carta não assinada.','Atenção',true);
 
   const win=window.open('','_blank');
@@ -894,18 +1332,42 @@ function imprimirCapa() {
   win.document.open();win.document.write(html);win.document.close();
 }
 
+// V30.5 — relatórios por colaborador: (FALTA) é um tipo de carta, não outra pessoa.
+// A chave ignora acentos, caixa e espaços extras. O histórico das cartas permanece intacto.
+function agruparCartasPorFuncionario(cartas) {
+  const grupos=new Map();
+  for(const carta of cartas) {
+    const {falta,nomeBase}=separarNomeCarta(carta.funcionario);
+    const nome=nomeBase.replace(/\s+/g,' ').trim();
+    if(!nome)continue;
+    const chave=chaveFuncionarioCarta(nome);
+    let registro=grupos.get(chave);
+    if(!registro){
+      const oficial=localizarNomeCartaNaBase(nome).registro;
+      registro={nome:oficial?.nome||nome,total:0,normais:0,faltas:0};
+      grupos.set(chave,registro);
+    }
+    registro.total++;
+    if(falta)registro.faltas++;
+    else registro.normais++;
+  }
+  return [...grupos.values()].sort((a,b)=>
+    b.total-a.total||a.nome.localeCompare(b.nome,'pt-BR'));
+}
+const detalharCartas = r => `${r.normais} normais · ${r.faltas} faltas`;
+
 const chartColors=['#1f4e78','#4f83b7','#77a6cc','#ec9845','#4e9d93','#7465ab','#d46f83','#8492a6','#90b67d','#c59759','#6f8796','#cbb2d9'];
 function filtrarPeriodoRelatorio() {const mes=$('filtro-relatorio-mes').value;return APP.cartas.filter(c=>!mes||c.dataOcorrencia.slice(0,7)===mes);}
 function renderRelatorios() {
   const data=filtrarPeriodoRelatorio(),mes=$('filtro-relatorio-mes').value;
   const periodo=mes?`${mes.slice(5,7)}/${mes.slice(0,4)}`:'TODO O PERÍODO';
-  const ranking=new Map();for(const c of data){const k=norm(c.funcionario);if(!k)continue;const o=ranking.get(k)||{nome:c.funcionario,total:0};o.total++;ranking.set(k,o);}
-  const arr=[...ranking.values()].sort((a,b)=>b.total-a.total||a.nome.localeCompare(b.nome,'pt-BR'));
+  // Top 15 idêntico na tabela, gráfico e imagem para manter a leitura no celular.
+  const arr=agruparCartasPorFuncionario(data).slice(0,15);
   $('titulo-ranking').textContent='RANKING DE CARTAS — '+periodo.toUpperCase();
   $('titulo-barras').textContent='QUANTIDADE DE CARTAS DE PONTO POR FUNCIONÁRIO — '+periodo.toUpperCase();
-  $('tbody-ranking').innerHTML=arr.length?arr.map((f,i)=>`<tr><td class="rank-num">${i+1}º</td><td><strong class="ranking-nome">${esc(f.nome)}</strong></td><td><strong class="ranking-quantidade">${f.total}</strong></td></tr>`).join(''):'<tr><td colspan="3" class="empty">Sem cartas para o período selecionado.</td></tr>';
-  const top=arr.slice(0,10),max=top[0]?.total||1;
-  $('grafico-barras').innerHTML=top.length?`<div class="bars">${top.map((x,i)=>`<div class="bar-row"><span class="bar-name" title="${esc(x.nome)}">${esc(x.nome)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(1,x.total/max*100)}%;background:${chartColors[i%chartColors.length]}"></div></div><b class="bar-count">${x.total}</b></div>`).join('')}</div><p class="chart-caption">Top 10 • ranking completo na tabela à esquerda</p>`:'<p class="empty">Sem dados para construir o gráfico.</p>';
+  $('tbody-ranking').innerHTML=arr.length?arr.map((f,i)=>`<tr><td class="rank-num">${i+1}º</td><td><strong class="ranking-nome">${esc(f.nome)}</strong><small class="block">${esc(detalharCartas(f))}</small></td><td><strong class="ranking-quantidade">${f.total}</strong></td></tr>`).join(''):'<tr><td colspan="3" class="empty">Sem cartas para o período selecionado.</td></tr>';
+  const top=arr,max=top[0]?.total||1;
+  $('grafico-barras').innerHTML=top.length?`<div class="bars">${top.map((x,i)=>`<div class="bar-row"><span class="bar-name" title="${esc(x.nome+' — '+detalharCartas(x))}">${esc(x.nome)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(1,x.total/max*100)}%;background:${chartColors[i%chartColors.length]}"></div></div><b class="bar-count" title="${esc(detalharCartas(x))}">${x.total}</b></div>`).join('')}</div><p class="chart-caption">Top 15 • cartas normais e faltas somadas por funcionário • detalhamento no ranking</p>`:'<p class="empty">Sem dados para construir o gráfico.</p>';
   const porResponsavel=new Map();for(const c of data){const nome=c.responsavel.trim()||'NÃO INFORMADO';const k=norm(nome);const o=porResponsavel.get(k)||{nome,total:0};o.total++;porResponsavel.set(k,o);}
   const responsaveis=[...porResponsavel.values()].sort((a,b)=>b.total-a.total);
   const total=responsaveis.reduce((s,v)=>s+v.total,0);
@@ -1060,12 +1522,8 @@ function agruparResumoParaImagem(linhas) {
     .map(g=>({...g,linhas:g.linhas.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}))}));
 }
 function rankingParaCompartilhar() {
-  const ranking=new Map();
-  for(const c of filtrarPeriodoRelatorio()) {
-    const k=norm(c.funcionario);if(!k)continue;
-    const r=ranking.get(k)||{nome:c.funcionario,total:0};r.total++;ranking.set(k,r);
-  }
-  return [...ranking.values()].sort((a,b)=>b.total-a.total||a.nome.localeCompare(b.nome,'pt-BR'));
+  // A imagem compartilhada usa a mesma contagem da tabela e do gráfico.
+  return agruparCartasPorFuncionario(filtrarPeriodoRelatorio()).slice(0,15);
 }
 // PNG gerado no próprio navegador, sem bibliotecas externas ou envio de dados a serviços de terceiros.
 function construirImagemResumo(tipo) {
@@ -1073,7 +1531,8 @@ function construirImagemResumo(tipo) {
   if(ehBanco&&!periodo.valido)throw Error(periodo.alerta);
   const linhas=ehBanco?resumoBancoLinhas(periodo):[];
   const grupos=ehBanco?agruparResumoParaImagem(linhas):[];
-  const lista=ehBanco?linhas:rankingParaCompartilhar().slice(0,15);
+  // Para a imagem continuar legível, o ranking tem o MESMO top 15 da tabela e do gráfico.
+  const lista=ehBanco?linhas:rankingParaCompartilhar();
   if(!lista.length)throw Error('Não há registros para compartilhar.');
   const canvas=document.createElement('canvas');
   const ctx=canvas.getContext('2d');
@@ -1161,7 +1620,7 @@ function construirImagemResumo(tipo) {
     ctx.fillText('Destaque amarelo = funcionário com folga livre. Valores exibem os 3 meses sincronizados.',x0,footerY);
     return canvas;
   }
-  const W=1500, margem=52,inicioY=230,rowH=49,cabH=48,h=Math.max(530,inicioY+cabH+rowH*lista.length+160);
+  const W=1500, margem=52,inicioY=230,rowH=60,cabH=48,h=Math.max(530,inicioY+cabH+rowH*lista.length+160);
   canvas.width=W;canvas.height=h;
   ctx.fillStyle='#f5f8fb';ctx.fillRect(0,0,W,h);
   ctx.fillStyle='#1f4e78';ctx.fillRect(0,0,W,130);
@@ -1170,7 +1629,7 @@ function construirImagemResumo(tipo) {
   ctx.fillStyle='#152f45';ctx.font='700 28px Arial';
   const subtitulo=$('filtro-relatorio-mes').value?$('filtro-relatorio-mes').value.slice(5,7)+'/'+$('filtro-relatorio-mes').value.slice(0,4):'TODO O HISTÓRICO';
   ctx.fillText(subtitulo,margem,173);
-  ctx.fillStyle='#596c80';ctx.font='20px Arial';ctx.fillText(`${lista.length} primeiras posições`,margem,205);
+  ctx.fillStyle='#596c80';ctx.font='20px Arial';ctx.fillText(`TOP ${lista.length} — funcionários com mais cartas`,margem,205);
   const x0=margem,y0=inicioY,widths=[120,1050,226],titles=['POSIÇÃO','FUNCIONÁRIO','CARTAS'];
   ctx.fillStyle='#dce9f5';ctx.fillRect(x0,y0,W-2*margem,cabH);
   let xx=x0;
@@ -1179,13 +1638,15 @@ function construirImagemResumo(tipo) {
   lista.forEach((r,i)=>{
     ctx.fillStyle=i%2===0?'#fff':'#edf3f8';ctx.fillRect(x0,y,W-2*margem,rowH);
     ctx.fillStyle='#172e43';ctx.font='700 18px Arial';
-    ctx.fillText(`${i+1}º`,x0+15,y+31);
-    ctx.fillText(cortarTexto(r.nome,1010),x0+135,y+31);
-    ctx.fillStyle='#0b735a';ctx.font='700 27px Arial';ctx.fillText(String(r.total),x0+1190,y+33);
+    ctx.fillText(`${i+1}º`,x0+15,y+36);
+    ctx.fillText(cortarTexto(r.nome,1010),x0+135,y+26);
+    ctx.fillStyle='#66798b';ctx.font='15px Arial';
+    ctx.fillText(detalharCartas(r),x0+135,y+48);
+    ctx.fillStyle='#0b735a';ctx.font='700 27px Arial';ctx.fillText(String(r.total),x0+1190,y+38);
     y+=rowH;
   });
   const footer=y+38;
-  ctx.fillStyle='#657689';ctx.font='20px Arial';ctx.fillText('Contagem de cartas de correção de ponto; não representa necessariamente faltas ao trabalho.',margem,footer);
+  ctx.fillStyle='#657689';ctx.font='20px Arial';ctx.fillText('Total por funcionário = cartas normais + cartas (FALTA).',margem,footer);
   return canvas;
 }
 async function obterBlobPNG(canvas){return new Promise((ok,erro)=>canvas.toBlob(blob=>blob?ok(blob):erro(Error('Falha ao gerar PNG.')),'image/png'));}
@@ -1207,6 +1668,9 @@ async function compartilharImagem(tipo,modo='compartilhar'){
 }
 
 function onClickDelegado(e) {
+  const reenviar=e.target.closest('.tm-repetir-carta');
+  if(reenviar){e.preventDefault();reenviarCartaPendente(reenviar.dataset.id);return;}
+
   const editar=e.target.closest('.carta-editar');if(editar){const carta=APP.cartas.find(c=>c.id===editar.dataset.id);if(carta)definirModoCarta(carta);return;}
   const excluir=e.target.closest('.carta-excluir');if(excluir){
     const carta=APP.cartas.find(c=>c.id===excluir.dataset.id);
@@ -1231,8 +1695,7 @@ function instalarAtualizacaoDeCartas(){
   botao.title='Recarregar as cartas da planilha, inclusive as assinaturas';
   acoes.appendChild(botao);cabecalho.appendChild(acoes);
   botao.addEventListener('click',()=>comBotaoCarregando(botao,async()=>{
-    const resultados=await Promise.all([carregarCartas(),carregarPendentes()]);
-    return resultados.every(Boolean);
+    return carregarCartas();
   },'Atualizando cartas…','Cartas de ponto atualizadas.'));
 }
 // Sugestões próprias para que Enter selecione o nome, sem submeter o formulário.
@@ -1256,21 +1719,25 @@ function configurarSugestaoCarta(idInput,idLista,obterValores,aposSelecionar=()=
   }
   function selecionar(i) {
     const escolhido=opcoes[i];if(!escolhido)return;
-    campo.value=escolhido;
+    campo.value=idInput==='carta-funcionario'?nomeHistoricoPreferidoCarta(escolhido):escolhido;
     campo.dispatchEvent(new Event('input',{bubbles:true}));
     campo.dispatchEvent(new Event('change',{bubbles:true}));
     fechar();aposSelecionar();
     campo.focus({preventScroll:true});
   }
   function atualizar() {
-    const busca=norm(campo.value);
+    // Para cartas (FALTA), buscar o funcionário pelo nome real e manter
+    // o prefixo ao selecionar a sugestão com Enter ou com o mouse.
+    const eFuncionario=idInput==='carta-funcionario';
+    const nomeDigitado=eFuncionario?separarNomeCarta(campo.value):{falta:false,nomeBase:campo.value};
+    const busca=norm(nomeDigitado.nomeBase);
     if(!busca){fechar();return;}
     opcoes=[...new Map(obterValores().filter(Boolean).map(nome=>[norm(nome),nome])).values()]
       .filter(nome=>norm(nome).includes(busca)&&norm(nome)!==busca)
       .sort((a,b)=>{
         const aIni=norm(a).startsWith(busca)?0:1,bIni=norm(b).startsWith(busca)?0:1;
         return aIni-bIni||a.localeCompare(b,'pt-BR');
-      }).slice(0,8);
+      }).slice(0,8).map(nome=>formatarNomeCarta(nome,eFuncionario&&nomeDigitado.falta));
     if(!opcoes.length){fechar();return;}
     indice=0;
     lista.innerHTML=opcoes.map((nome,i)=>`<div class="carta-sugestao-item" id="${idLista}-op-${i}" role="option" aria-selected="${i===0}" data-index="${i}">${esc(nome)}</div>`).join('');
@@ -1303,6 +1770,14 @@ function configurarEnterEntreCamposCarta(idFormulario='form-carta',idBotao='btn-
   form.addEventListener('keydown',e=>{
     if(e.key!=='Enter'||e.isComposing||e.ctrlKey||e.metaKey||e.altKey)return;
     const atual=e.target;
+    // No cadastro/edição de cartas, Enter nas observações avança até Salvar;
+    // Shift+Enter mantém a quebra de linha. Nunca envia ao pressionar Enter no texto.
+    if(idFormulario==='form-carta' && atual.id==='carta-obs'){
+      if(e.shiftKey)return;
+      e.preventDefault();
+      $(idBotao).focus();
+      return;
+    }
     if(!atual.matches('input,select')||atual.type==='submit')return;
     e.preventDefault();
     const campos=[...form.querySelectorAll('input,select,textarea')]
@@ -1327,14 +1802,36 @@ function registrarEventos() {
   ['filtro-horas','filtro-empresa-horas','filtro-saldo'].forEach(id=>$(id).addEventListener(id==='filtro-horas'?'input':'change',renderSaldos));
   $('form-folga').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('salvar-folga'),()=>salvarFolga(e),'Salvando folga…');});
   $('filtro-folga-status').addEventListener('change',renderFolgas);
-  $('form-carta').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('btn-salvar-carta'),()=>salvarCarta(e),'Salvando carta…');});
+  $('form-carta').addEventListener('submit',e=>{e.preventDefault();if(APP.cartaEditando)comBotaoCarregando($('btn-salvar-carta'),()=>salvarCarta(e),'Salvando alterações…');else salvarCarta(e);});
   ['filtro-cartas','filtro-cartas-status','filtro-cartas-mes'].forEach(id=>$(id).addEventListener(id==='filtro-cartas'?'input':'change',renderCartas));
   $('limpar-filtro-cartas').addEventListener('click',()=>{$('filtro-cartas').value='';$('filtro-cartas-status').value='';$('filtro-cartas-mes').value='';renderCartas();});
   ['filtro-capa','filtro-capa-mes'].forEach(id=>$(id).addEventListener(id==='filtro-capa'?'input':'change',renderCapa));
-  $('check-todas-capa').addEventListener('change',e=>{for(const c of cartasCapaFiltradas().slice(0,250))if(e.target.checked)APP.selecionadas.add(c.id);else APP.selecionadas.delete(c.id);renderCapa();});
-  $('tbody-capa').addEventListener('change',e=>{if(!e.target.matches('.check-capa'))return;if(e.target.checked)APP.selecionadas.add(e.target.dataset.id);else APP.selecionadas.delete(e.target.dataset.id);renderCapa();});
-  $('selecionar-visiveis').addEventListener('click',()=>{cartasCapaFiltradas().slice(0,250).forEach(c=>APP.selecionadas.add(c.id));renderCapa();});
-  $('limpar-selecao').addEventListener('click',()=>{APP.selecionadas.clear();renderCapa();});
+  $('check-todas-capa').addEventListener('change',e=>{
+    for(const c of cartasCapaFiltradas().slice(0,250))
+      if(e.target.checked)APP.selecionadas.add(c.id);else APP.selecionadas.delete(c.id);
+    ultimaCartaCapaMarcada=null;
+    renderCapa();
+  });
+  // A tecla Shift é informada pelo evento click, não pelo change da checkbox.
+  // Preservar esse dado na própria caixa até a mudança efetiva do estado.
+  $('tbody-capa').addEventListener('click',e=>{
+    const caixa=e.target.closest?.('.check-capa');
+    if(caixa)caixa.dataset.selecionarIntervalo=e.shiftKey?'1':'0';
+  });
+  $('tbody-capa').addEventListener('change',e=>{
+    if(!e.target.matches('.check-capa'))return;
+    alterarSelecaoCapa(e.target.dataset.id,e.target.checked,e.target.dataset.selecionarIntervalo==='1');
+  });
+  $('selecionar-visiveis').addEventListener('click',()=>{
+    cartasCapaFiltradas().slice(0,250).forEach(c=>APP.selecionadas.add(c.id));
+    ultimaCartaCapaMarcada=null;
+    renderCapa();
+  });
+  $('limpar-selecao').addEventListener('click',()=>{
+    APP.selecionadas.clear();
+    ultimaCartaCapaMarcada=null;
+    renderCapa();
+  });
   $('imprimir-capa').addEventListener('click',imprimirCapa);
   $('filtro-relatorio-mes').addEventListener('change',renderRelatorios);
   $('relatorio-todos').addEventListener('click',()=>{$('filtro-relatorio-mes').value='';renderRelatorios();});
@@ -1355,14 +1852,24 @@ function registrarEventos() {
     ...APP.funcionarios.map(f=>f.nome),...APP.saldos.map(f=>f.nome)
   ],atualizarEmpresaCarta);
   configurarSugestaoCarta('carta-responsavel','carta-sugestoes-responsavel',()=>APP.cartas.map(c=>c.responsavel));
+  $('carta-responsavel').addEventListener('input',()=>{
+    estadoSugestaoCarta.editadoManualmente=true;
+    aplicarAprendizadoResponsavelCarta();
+  });
   configurarEnterEntreCamposCarta();
   $('btn-cancelar-edicao-carta').addEventListener('click',()=>definirModoCarta());
   ['carta-ocorrencia','carta-correcao'].forEach(id=>{const input=$(id);input.addEventListener('change',()=>normalizarAnoDaData(input));input.addEventListener('blur',()=>normalizarAnoDaData(input));});
 }
 document.addEventListener('DOMContentLoaded',()=>{
+  prepararFilaCartas();
   registrarEventos();definirModoCarta();$('filtro-relatorio-mes').value=mesAtual();
   // A faixa de meses é definida pelos dados efetivamente sincronizados em renderResumoBanco().
-  setInterval(()=>{if(APP.sessao&&APP.sessao.dataLogin!==today())encerrarSessaoLocal();},20000);
+  setInterval(()=>{if(APP.sessao&&APP.sessao.dataLogin!==diaSessaoBrasil())encerrarSessaoLocal();},20000);
   verificarSessao();
 });
- 
+
+// Se o navegador permitir, avisa sobre envios que ainda não foram confirmados.
+window.addEventListener('beforeunload',e=>{
+  if(!filaCartasDaConta().length)return;
+  e.preventDefault();e.returnValue='';
+});
