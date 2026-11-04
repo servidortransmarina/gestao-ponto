@@ -196,10 +196,12 @@
                 <div class="carta-campo-autocomplete">
                   <label for="carta-responsavel">Entregue ao responsável</label>
                   <div class="carta-autocomplete-relativo"><input id="carta-responsavel" autocomplete="off" placeholder="Ex.: PEDRINHO" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-responsavel" aria-expanded="false"><div id="carta-sugestoes-responsavel" class="carta-sugestoes" role="listbox" hidden></div></div>
+                  <small id="carta-responsavel-aprendizado" class="carta-aprendizado" aria-live="polite" hidden></small>
                 </div>
                 <label>Assinado <select id="carta-assinado"><option value="NÃO">NÃO</option><option value="SIM">SIM</option></select></label>
                 <label class="wide">Observações / adicional <textarea id="carta-obs" rows="2" maxlength="2000" placeholder="Informações complementares"></textarea></label>
                 <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="btn-salvar-carta">Salvar carta</button><button class="btn subtle" type="button" id="btn-cancelar-edicao-carta" hidden>Cancelar edição</button></div>
+                <div class="wide tm-fila-cartas" id="tm-fila-cartas" role="status" aria-live="polite" hidden></div>
               </form></div>
               <div class="panel"><h3>Resumo das cartas</h3><div class="mini-metrics"><div><strong id="cartas-total">0</strong><span>Registradas</span></div><div><strong id="cartas-pendentes">0</strong><span>Sem assinatura</span></div><div><strong id="cartas-assinadas">0</strong><span>Assinadas</span></div></div><div class="note">As colunas originais da sua aba no Google Sheets são mantidas. Novos campos do Excel são acrescentados ao final, sem sobrescrever históricos.</div></div>
             </div>
