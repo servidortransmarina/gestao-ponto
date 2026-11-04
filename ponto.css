@@ -1425,4 +1425,30 @@ button.tm-carregando .tm-logo-indisponivel img {display:none}
   .tm-usuario-perfil-label {flex:1;justify-content:flex-start}
   .tm-usuario-perfil-select {flex:1;min-width:125px}
 }
- 
+
+/* V30.1 — sugestão discreta de responsável, sem bloquear edição manual. */
+.carta-aprendizado {
+  display:block;
+  margin-top:7px;
+  color:#64788b;
+  font-size:11px;
+  line-height:1.45;
+}
+.carta-aprendizado[hidden] {display:none}
+.carta-aprendizado.carta-aprendizado-confiavel {color:#177454}
+
+
+/* V30.2 — lançamentos rápidos com fila durável e confirmação real do Google Sheets. */
+.tm-fila-cartas {border:1px solid #dce7f1;background:#f5f9fd;border-radius:10px;padding:11px 13px;line-height:1.45}
+.tm-fila-resumo {display:flex;align-items:center;gap:8px;color:#1f4e78;font-weight:700;font-size:12px}
+.tm-fila-resumo .tm-spinner {width:13px;height:13px;border-radius:50%;border:2px solid #a7c5db;border-top-color:#1f4e78;animation:tm-giro .75s linear infinite;flex-shrink:0}
+@keyframes tm-giro {to {transform:rotate(360deg)}}
+.tm-fila-erro {margin-top:8px;padding:9px;background:#fff;border:1px solid #f2caca;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.tm-fila-erro strong {font-size:12px;color:#982e2e;display:block}
+.tm-fila-erro small {display:block;font-size:11px;color:#8a4850;max-width:48ch;overflow-wrap:anywhere}
+.tm-fila-erro .btn {min-height:32px}
+.tm-carta-linha-pendente {background:#f7faff}
+.tm-carta-linha-pendente.tm-carta-com-erro {background:#fff6f6}
+.tm-carta-linha-pendente .tm-situacao-envio {font-size:11px;font-weight:750;color:#356585}
+.tm-carta-linha-pendente.tm-carta-com-erro .tm-situacao-envio {color:#aa3434}
+@media(prefers-reduced-motion:reduce){.tm-fila-resumo .tm-spinner {animation:none}}
