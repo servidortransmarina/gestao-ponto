@@ -1452,3 +1452,79 @@ button.tm-carregando .tm-logo-indisponivel img {display:none}
 .tm-carta-linha-pendente .tm-situacao-envio {font-size:11px;font-weight:750;color:#356585}
 .tm-carta-linha-pendente.tm-carta-com-erro .tm-situacao-envio {color:#aa3434}
 @media(prefers-reduced-motion:reduce){.tm-fila-resumo .tm-spinner {animation:none}}
+
+
+/* V30.15 — Histórico de folgas: dados destacados e observações visíveis. */
+.tm-folgas-historico .table-scroll {padding:0 1px 4px;}
+.tm-folgas-historico .tm-tabela-folgas {
+  border-collapse:separate;
+  border-spacing:0 9px;
+  table-layout:fixed;
+  min-width:1080px;
+  width:100%;
+}
+.tm-tabela-folgas .tm-col-folga-pessoa {width:25%;}
+.tm-tabela-folgas .tm-col-folga-data {width:10%;}
+.tm-tabela-folgas .tm-col-folga-horas {width:8%;}
+.tm-tabela-folgas .tm-col-folga-status {width:11%;}
+.tm-tabela-folgas .tm-col-folga-responsavel {width:12%;}
+.tm-tabela-folgas .tm-col-folga-obs {width:21%;}
+.tm-tabela-folgas .tm-col-folga-acoes {width:13%;}
+.tm-tabela-folgas thead {background:#f3f7fc;}
+.tm-tabela-folgas thead th {border-bottom:1px solid #e5edf6;padding:12px 10px;font-size:10px;}
+.tm-tabela-folgas thead th:first-child {border-radius:8px 0 0 8px;}
+.tm-tabela-folgas thead th:last-child {border-radius:0 8px 8px 0;}
+.tm-tabela-folgas tbody .tm-folga-linha td {
+  background:#f8fafd;
+  border-top:1px solid #e7edf5;
+  border-bottom:1px solid #e7edf5;
+  padding:12px 10px;
+  vertical-align:middle;
+}
+.tm-tabela-folgas tbody .tm-folga-linha:hover td {background:#f1f7fd;}
+.tm-tabela-folgas tbody .tm-folga-linha td:first-child {
+  border-left:1px solid #e7edf5;
+  border-radius:10px 0 0 10px;
+  padding-left:14px;
+}
+.tm-tabela-folgas tbody .tm-folga-linha td:last-child {
+  border-right:1px solid #e7edf5;
+  border-radius:0 10px 10px 0;
+  padding-right:14px;
+}
+.tm-tabela-folgas .tm-folga-pessoa strong {font-size:12px;color:#20344a;font-weight:800;}
+.tm-tabela-folgas .tm-folga-pessoa .block {margin-top:3px;color:#6b8199;font-size:11px;}
+.tm-folga-destaque {
+  display:inline-block;
+  max-width:100%;
+  border-radius:7px;
+  padding:7px 9px;
+  font-size:12px;
+  font-weight:800;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.tm-folga-data {color:#1e527e;background:#e9f2fa;white-space:nowrap;}
+.tm-folga-horas {color:#19765c;background:#e5f5ee;white-space:nowrap;font-size:13px;}
+.tm-folga-responsavel {color:#334b63;background:#ebeff5;}
+.tm-folga-observacao {
+  color:#33495d;
+  background:#fff;
+  border:1px solid #e1eaf4;
+  border-left:3px solid #80a9d2;
+  border-radius:7px;
+  padding:9px 10px;
+  line-height:1.45;
+  font-size:12px;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.tm-folga-sem-observacao {color:#8797aa;background:#f4f7fb;border-left-color:#d3dfeb;}
+.tm-tabela-folgas .tm-folga-acoes-titulo {text-align:right;padding-right:16px;}
+.tm-tabela-folgas .tm-folga-botoes {display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;}
+.tm-tabela-folgas .tm-folga-botoes .btn {white-space:nowrap;}
+.tm-folga-concluida {color:#8797aa;}
+@media(max-width:800px) {
+  .tm-folgas-historico .table-scroll {overflow-x:auto;}
+  .tm-folgas-historico .tm-tabela-folgas {min-width:1080px;}
+}
