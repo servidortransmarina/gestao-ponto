@@ -1,7 +1,7 @@
 /* FRONTEND — GitHub Pages. Atualize esta URL após uma NOVA implantação do Apps Script. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwUH3n8zl4g_kgxvfSxmXW0qZQ4pi_SuZ-EOM0B86KkM23kSca4n41PZyC-ABhkj3zI/exec';
 const STORAGE_KEY = 'transmarina_gestao_sessao_v2';
-const APP = {sessao:null, cartas:[], pendentes:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
+const APP = {sessao:null, cartas:[], pendentes:[], acoesCartas:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
 const $ = id => document.getElementById(id);
 const norm = x => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
 // (FALTA) identifica o tipo da carta, mas a busca de empresa e responsável
@@ -72,6 +72,8 @@ function nomeHistoricoPreferidoCarta(nome) {
   return formatarNomeCarta(localizado.registro?.nome||nomeBase,falta);
 }
 
+// Contador do menu; no celular o selo some quando o valor é zero.
+function definirBadge(id,n){const el=$(id);if(!el)return;el.textContent=String(n);el.dataset.zero=Number(n)>0?'0':'1';}
 const esc = v => String(v == null?'':v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => {const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
 const mesAtual = () => today().slice(0,7);
@@ -497,7 +499,7 @@ async function iniciarPainel() {
   $('data-hoje').textContent=fmtDia();
   escolherAba('horas');
   const operacoes=[carregarSaldos(),carregarFolgas()];
-  if(adm)operacoes.push(carregarCartas(),carregarFuncionarios(),carregarUsuarios());
+  if(adm){retomarSincronizacao();operacoes.push(carregarCartas(),carregarAcoesCartas(),carregarFuncionarios(),carregarUsuarios());}
   else operacoes.push(carregarPendentes());
   await Promise.allSettled(operacoes);
   if(adm)reativarFilaDeCartas();
@@ -534,7 +536,7 @@ async function carregarUsuarios() {
 function renderUsuarios() {
   const dados=APP.usuarios;
   const pendentes=dados.pendentes||[],ativos=dados.ativos||[],recusados=dados.recusados||[];
-  $('badge-usuarios').textContent=String(pendentes.length);
+  definirBadge('badge-usuarios',pendentes.length);
   $('quantidade-usuarios-pendentes').textContent=String(pendentes.length);
   $('quantidade-usuarios-ativos').textContent=String(ativos.length);
   $('quantidade-usuarios-recusados').textContent=String(recusados.length);
@@ -767,42 +769,105 @@ function preencherPlanejamento(f) {
 // V30.17: o botão não espera a sincronização inteira na mesma requisição.
 // Cada consulta ao estado dura poucos segundos; uma tarefa demorada não
 // estoura o limite de 55 segundos do fetch nem é disparada duas vezes.
-async function sincronizar() {
-  if(APP.sessao?.perfil!=='ADM')return false;
-  const usuario=APP.sessao.usuario;
-  try {
-    const inicio=await api('iniciarSincronizacaoMob');
-    const id=inicio.id;
-    if(!id)throw Error('O servidor não confirmou o agendamento da sincronização.');
-    feedbackAtualizacao('Sincronização agendada. O painel será atualizado ao concluir.');
-    let estado=inicio;
-    const limite=Date.now()+11*60*1000;
-    while(Date.now()<limite) {
-      if(APP.sessao?.usuario!==usuario)return false;
-      if(estado.estado==='CONCLUIDA') {
-        const resultado=estado.resultado||{};
-        const [ok]=await Promise.all([carregarSaldos(),carregarFuncionarios()]);
-        if(ok===false){
-          showMessage('Sincronização concluída, mas o painel não pôde ser recarregado. Clique em Recarregar painel.','Atualização parcial',true);
-          return false;
-        }
-        showMessage(`${resultado.total||'Os'} funcionários foram sincronizados. Os valores já estão atualizados no painel.`,
-          'Sincronização concluída');
-        return true;
-      }
-      if(estado.estado==='FALHOU'){
-        throw Error(estado.erro||'A sincronização falhou. Os saldos anteriores foram preservados.');
-      }
-      await new Promise(resolve=>setTimeout(resolve,6500));
-      if(APP.sessao?.usuario!==usuario)return false;
-      estado=await api('estadoSincronizacaoMob',{id});
-    }
-    showMessage('A sincronização ainda pode estar sendo processada pelo Apps Script. Não inicie outra operação agora; use Atualizar painel para conferir os dados.','Sincronização em andamento');
-    return false;
-  }catch(e){
-    showMessage(e.message,'Não foi possível sincronizar',true);
-    return false;
+let tmSyncMonitor=0;
+let tmSyncIdAtivo='';
+let tmSyncIniciando=false;
+let tmSyncUltimoEstado=null;
+const TEXTO_BOTAO_SINCRONIZAR='Sincronizar MobPonto';
+const SYNC_POLL_MS=6000;
+// Mesma animação da logo usada em comBotaoCarregando. O markup só é recriado
+// quando o texto muda, para a logo não reiniciar a cada consulta de progresso.
+function animarBotaoSincronizacao(botao,texto) {
+  const carregando=Boolean(texto);
+  if(carregando) {
+    if(botao.dataset.tmSyncTexto===texto)return;
+    botao.dataset.tmSyncTexto=texto;
+    botao.classList.add('tm-carregando');
+    botao.setAttribute('aria-busy','true');botao.setAttribute('aria-label',texto);
+    botao.innerHTML=`<span class="tm-carregando-texto">${esc(texto)}</span><span class="tm-logo-pista" aria-hidden="true"><span class="tm-logo-viagem"><img src="logotrm.png" alt="" onerror="this.parentElement.classList.add('tm-logo-indisponivel')"></span></span>`;
+  } else if(botao.dataset.tmSyncTexto!==undefined||botao.textContent!==TEXTO_BOTAO_SINCRONIZAR) {
+    delete botao.dataset.tmSyncTexto;
+    botao.classList.remove('tm-carregando');
+    botao.removeAttribute('aria-busy');botao.removeAttribute('aria-label');
+    botao.textContent=TEXTO_BOTAO_SINCRONIZAR;
   }
+}
+function atualizarVisualSincronizacao(estado) {
+  if(APP.sessao?.perfil!=='ADM')return;
+  tmSyncUltimoEstado=estado;
+  const botao=$('btn-sincronizar'),area=$('tm-estado-sincronizacao');
+  if(!botao||!area)return;
+  const ativo=['AGENDADA','EXECUTANDO'].includes(estado?.estado);
+  botao.disabled=ativo||tmSyncIniciando;
+  animarBotaoSincronizacao(botao,tmSyncIniciando?'Solicitando…':ativo?'Sincronização em andamento…':'');
+  if(!estado||estado.estado==='NAO_INICIADA'){area.hidden=!tmSyncIniciando; if(tmSyncIniciando){area.textContent='Solicitando sincronização ao Apps Script…';area.className='tm-estado-sincronizacao tm-sync-ativo';}return;}
+  area.hidden=false;
+  const p=estado.progresso||{};
+  if(ativo){
+    const conteudo=p.total>0?` — ${p.feitos||0}/${p.total} consultas`:' ';
+    area.textContent=`${estado.estado==='AGENDADA'?'Aguardando início no Apps Script':(p.etapa||'Processando')} ${conteudo}. Pode atualizar a página: o processo continuará sem duplicar.`;
+    area.className='tm-estado-sincronizacao tm-sync-ativo';
+  }else if(estado.estado==='CONCLUIDA'){
+    area.textContent=`Concluída em ${estado.atualizadoEm||''}. Os saldos foram atualizados.`;
+    area.className='tm-estado-sincronizacao tm-sync-ok';
+  }else{
+    area.textContent=estado.estado==='FALHOU'?'Falha: '+(estado.erro||'Confira as mensagens do Apps Script.'):'Nenhuma sincronização em andamento.';
+    area.className='tm-estado-sincronizacao tm-sync-falha';
+  }
+}
+async function acompanharSincronizacao(estado,mostraConclusao=false) {
+  const monitor=++tmSyncMonitor;
+  tmSyncIdAtivo=estado.id;
+  const usuario=APP.sessao?.usuario,token=APP.sessao?.token;
+  atualizarVisualSincronizacao(estado);
+  let espera=2500; // primeira consulta rápida; depois, ritmo normal
+  while(['AGENDADA','EXECUTANDO'].includes(estado.estado)&&monitor===tmSyncMonitor){
+    await new Promise(resolve=>setTimeout(resolve,espera));
+    espera=SYNC_POLL_MS;
+    if(!APP.sessao||APP.sessao.usuario!==usuario||APP.sessao.token!==token)return;
+    try {
+      estado=await api('estadoSincronizacaoMob',{id:tmSyncIdAtivo});
+      atualizarVisualSincronizacao(estado);
+    }catch(e){
+      const area=$('tm-estado-sincronizacao');
+      if(area){area.hidden=false;area.className='tm-estado-sincronizacao tm-sync-ativo';area.textContent='Sem resposta momentânea do servidor. O processo não será reiniciado; tentando reconectar…';}
+      continue;
+    }
+  }
+  if(monitor!==tmSyncMonitor)return;
+  tmSyncIdAtivo='';
+  if(estado.estado==='CONCLUIDA') {
+    const [carregado]=await Promise.all([carregarSaldos(),carregarFuncionarios()]);
+    if(mostraConclusao)feedbackAtualizacao(carregado===false?'Sincronização terminou. Recarregue o painel para atualizar a visualização.':'Sincronização concluída e saldos atualizados.',carregado===false);
+  } else if(estado.estado==='FALHOU'){
+    showMessage(estado.erro||'A sincronização não foi concluída. Dados anteriores preservados.','Falha na sincronização',true);
+  }
+}
+async function retomarSincronizacao() {
+  if(APP.sessao?.perfil!=='ADM')return;
+  try {
+    const estado=await api('estadoSincronizacaoMob');
+    atualizarVisualSincronizacao(estado);
+    if(['AGENDADA','EXECUTANDO'].includes(estado.estado))acompanharSincronizacao(estado,true);
+  }catch(e){
+    const area=$('tm-estado-sincronizacao');
+    if(area){area.hidden=false;area.textContent='Não foi possível consultar o andamento. Tente atualizar o painel.';}
+  }
+}
+async function sincronizar() {
+  if(APP.sessao?.perfil!=='ADM'||tmSyncIniciando||tmSyncIdAtivo)return false;
+  tmSyncIniciando=true;atualizarVisualSincronizacao(null);
+  try {
+    const estado=await api('iniciarSincronizacaoMob');
+    if(!estado.id)throw Error('O Apps Script não confirmou o agendamento.');
+    atualizarVisualSincronizacao(estado);
+    if(['AGENDADA','EXECUTANDO'].includes(estado.estado))acompanharSincronizacao(estado,true);
+    else if(estado.estado==='CONCLUIDA'){await Promise.all([carregarSaldos(),carregarFuncionarios()]);}
+    else if(estado.estado==='FALHOU')throw Error(estado.erro||'Falha na sincronização.');
+    feedbackAtualizacao(estado.jaEmAndamento?'Retomando a sincronização já iniciada.':'Sincronização agendada. Você pode usar outras abas ou atualizar a página.');
+    return true;
+  }catch(e){showMessage(e.message,'Não foi possível sincronizar',true);return false;}
+  finally{tmSyncIniciando=false;atualizarVisualSincronizacao(tmSyncUltimoEstado);}
 }
 // V26 — folgas no mesmo padrão visual das cartas, com empresa vinda da base.
 // Combina nome + empresa para não confundir homônimos das duas empresas.
@@ -938,7 +1003,7 @@ function renderFolgas() {
   const status=$('filtro-folga-status').value;
   const items=APP.folgas.filter(f=>!status||f.status===status);
   $('tbody-folgas').innerHTML=items.length?items.map(f=>{
-    const op=f.status==='PLANEJADA'?`<button type="button" class="btn tiny primary folga-status" data-id="${esc(f.id)}" data-status="CONCEDIDA">Concedida</button><button type="button" class="btn tiny subtle folga-status" data-id="${esc(f.id)}" data-status="CANCELADA">Cancelar</button>`:'<span class="tm-folga-concluida">—</span>';
+    const op=f.status==='PLANEJADA' ? (APP.sessao?.perfil==='ADM'?`<button type="button" class="btn tiny primary folga-status" data-id="${esc(f.id)}" data-status="CONCEDIDA">Concedida</button><button type="button" class="btn tiny subtle folga-status" data-id="${esc(f.id)}" data-status="CANCELADA">Recusar</button>`:'<span class="tm-folga-aguarda">Aguardando aprovação do ADM</span>') : '<span class="tm-folga-concluida">—</span>';
     const observacao=String(f.observacoes||'').trim();
     return `<tr class="tm-folga-linha">
       <td class="tm-folga-pessoa"><strong>${esc(f.funcionario)}</strong><small class="block">${esc(f.empresa||'—')}</small></td>
@@ -952,6 +1017,7 @@ function renderFolgas() {
   }).join(''):'<tr><td colspan="7" class="empty">Nenhuma folga registrada neste filtro.</td></tr>';
 }
 async function mudarStatusFolga(id,status) {
+  if(APP.sessao?.perfil!=='ADM'){showMessage('Somente o administrador pode aceitar ou recusar folgas.','Acesso restrito',true);return false;}
   try{
     const r=await api('alterarFolga',{idFolga:id,status});
     if(r.status!==status)throw Error('O status não foi confirmado pelo servidor. Atualize a lista.');
@@ -976,7 +1042,7 @@ async function carregarCartas() {
 function atualizarPendentesAdmLocal() {
   if(APP.sessao?.perfil!=='ADM')return;
   APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM');
-  $('badge-pendentes').textContent=APP.pendentes.length;
+  definirBadge('badge-pendentes',APP.pendentes.length);
   renderPendentes();
 }
 // V30.1 — aprendizado local baseado nas últimas confirmações efetivas de assinatura.
@@ -1310,40 +1376,93 @@ async function excluirCarta(id) {
   }catch(e){showMessage(e.message,'Falha ao excluir carta',true);return false;}
 }
 async function carregarPendentes() {
-  // O administrador já tem a lista completa; consultar de novo só para as
-  // pendências duplicaria milhares de registros trafegando pela rede.
   if(APP.sessao?.perfil==='ADM')return carregarCartas();
-  try{
-    APP.pendentes=((await api('getDadosEncarregado')).dados||[]).filter(c=>c.status!=='SIM');
-    $('badge-pendentes').textContent=APP.pendentes.length;
+  try {
+    APP.pendentes=(await api('getDadosEncarregado')).dados||[];
     renderPendentes();return true;
   }catch(e){$('lista-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
 }
 function renderPendentes() {
-  $('lista-pendentes').innerHTML=APP.pendentes.length?APP.pendentes.map(c=>`<article class="pending-item"><div><span class="pending-date">${fmtData(c.dataOcorrencia)}</span><h4>${esc(c.funcionario)}</h4><p>${esc(c.motivo||'Carta aguardando assinatura')}${c.responsavel?' • Responsável: '+esc(c.responsavel):''}</p></div><button class="btn primary carta-assinar" data-id="${esc(c.id)}">Confirmar assinatura</button></article>`).join(''):'<div class="empty tall">Nenhuma carta pendente de assinatura.</div>';
+  const filtro=$('filtro-controle-enc')?.value||'PENDENTE';
+  const pendentes=APP.pendentes.filter(c=>c.controleEncarregado!=='ASSINADA').length;
+  definirBadge('badge-pendentes',pendentes);
+  const ehAdm=APP.sessao?.perfil==='ADM';
+  const filtros=$('filtro-controle-enc')?.parentElement; if(filtros)filtros.hidden=ehAdm;
+  const exibidas=ehAdm?APP.pendentes:APP.pendentes.filter(c=>filtro==='TODAS'||(filtro==='ASSINADA'
+    ?c.controleEncarregado==='ASSINADA':c.controleEncarregado!=='ASSINADA'));
+  $('lista-pendentes').innerHTML=exibidas.length?exibidas.map(c=>{
+    const assinatura=c.controleEncarregado==='ASSINADA';
+    const reimpressao=c.controleEncarregado==='REIMPRESSAO';
+    const via=Math.max(1,Number(c.via)||1);
+    const rotuloVia=via>=2?` · ${via}ª via`:'';
+    return `<article class="pending-item tm-carta-encarregado">
+      <div class="tm-pendente-info"><span class="pending-date">${esc(fmtData(c.dataOcorrencia))}</span>
+        <h4>${esc(c.funcionario)}</h4>
+        <p>${esc(c.motivo||'Carta de ponto')}${c.responsavel?' • Entregue a: '+esc(c.responsavel):''}</p>
+        <span class="tm-mov-status ${assinatura?'tm-enc-assinada':reimpressao?'tm-enc-reimpressao':'tm-enc-pendente'}">${assinatura?'Assinatura recebida':reimpressao?'Reimpressão solicitada':'Aguardando assinatura'+rotuloVia}</span>
+      </div><div class="tm-pendente-acoes">
+        ${ehAdm?`<button type="button" class="btn primary carta-assinar" data-id="${esc(c.id)}">Confirmar assinatura</button>`:
+          `${!assinatura?`<button type="button" class="btn primary tm-enc-registrar" data-id="${esc(c.id)}" data-status="ASSINADA">Marcar assinatura recebida</button>`:''}
+          <button type="button" class="btn secondary tm-enc-registrar" data-id="${esc(c.id)}" data-status="REIMPRESSAO" ${reimpressao?'disabled title="Já existe solicitação de reimpressão"':''}>Solicitar reimpressão</button>`}
+      </div></article>`;
+  }).join(''):'<div class="empty tall">Nenhuma carta neste filtro.</div>';
+}
+async function registrarAcaoCartaEncarregado(id,status) {
+  if(APP.sessao?.perfil!=='ENCARREGADO')return false;
+  try {
+    const idSolicitacao=crypto.randomUUID?.()||('ENC-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+    const r=await api('registrarAcaoCartaEncarregado',{idCarta:id,status,idSolicitacao});
+    if(!r.evento||r.estado!==status)throw Error('A ação não foi confirmada pelo servidor. Atualize a lista.');
+    const carta=APP.pendentes.find(c=>c.id===id);
+    if(carta)carta.controleEncarregado=r.estado;
+    renderPendentes();
+    feedbackAtualizacao(status==='ASSINADA'?'Assinatura marcada no seu controle. O histórico do ADM não foi alterado.':'Reimpressão solicitada e enviada ao painel do administrador.');
+    return true;
+  }catch(e){showMessage(e.message,'Não foi possível registrar a ação',true);return false;}
 }
 async function confirmarCarta(id) {
-  try{
-    // Somente o retorno após a gravação definitiva confirma a operação.
-    // O servidor já devolve a carta atualizada; NÃO refazer duas consultas
-    // completas ao Sheets a cada clique.
+  if(APP.sessao?.perfil!=='ADM')return false;
+  try {
     const r=await api('confirmarCarta',{idCarta:id});
-    if(!r.carta)throw Error('O servidor confirmou sem devolver os dados. Atualize o histórico e confira a implantação do Apps Script.');
-    if(APP.sessao?.perfil==='ADM') {
-      const idx=APP.cartas.findIndex(c=>c.id===id);
-      if(idx>=0)APP.cartas[idx]=r.carta;
-      else APP.cartas.unshift(r.carta);
-      reexibirCartasLocais();
-    } else {
-      APP.pendentes=APP.pendentes.filter(c=>c.id!==id);
-      $('badge-pendentes').textContent=APP.pendentes.length;
-      renderPendentes();
-    }
-    feedbackAtualizacao(r.mensagem||'Assinatura confirmada.');
-    return true;
+    if(!r.carta)throw Error('O servidor não confirmou a carta. Recarregue o histórico.');
+    const idx=APP.cartas.findIndex(c=>c.id===id);
+    if(idx>=0)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);
+    reexibirCartasLocais();feedbackAtualizacao('Assinatura confirmada no histórico administrativo.');return true;
   }catch(e){showMessage(e.message,'Não foi possível confirmar',true);return false;}
 }
 
+let atualizandoAcoesCartas=false;
+async function carregarAcoesCartas() {
+  if(APP.sessao?.perfil!=='ADM'||atualizandoAcoesCartas)return false;
+  atualizandoAcoesCartas=true;
+  try {APP.acoesCartas=(await api('getAcoesCartasADM')).dados||[];renderAcoesCartas();return true;}
+  catch(e){$('tm-lista-acoes-cartas').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
+  finally{atualizandoAcoesCartas=false;}
+}
+function renderAcoesCartas() {
+  const lista=$('tm-lista-acoes-cartas');if(!lista)return;
+  const acoes=APP.acoesCartas||[];
+  $('tm-total-acoes-cartas').textContent=String(acoes.length);
+  lista.innerHTML=acoes.length?acoes.map(a=>`<article class="tm-aviso-carta">
+    <div class="tm-aviso-nome"><strong title="${esc(a.funcionario)}">${esc(a.funcionario)}</strong>
+      <small>Carta: ${esc(fmtData(a.dataOcorrencia))}</small></div>
+    <div class="tm-aviso-quem" title="Registrado em ${esc(fmtDataHora(a.quando))}">${esc(a.marcadoPor||'—')}</div>
+    <div class="tm-aviso-acao"><span class="tm-aviso-situacao ${a.status==='ASSINADA'?'tm-aviso-assinada':'tm-aviso-reimpressao'}">${a.status==='ASSINADA'?'Assinada':'Reimpressão'}</span>
+      ${a.status==='REIMPRESSAO'?`<button type="button" class="btn tiny primary tm-reimpressao-ok" data-id="${esc(a.idCarta)}" title="Reimpressão feita: devolve a carta ao encarregado" aria-label="Marcar reimpressão de ${esc(a.funcionario)} como feita">✓ OK</button>`:''}</div>
+  </article>`).join(''):'<p class="tm-avisos-vazio">Nenhuma movimentação registrada pelos encarregados.</p>';
+}
+async function concluirReimpressao(idCarta) {
+  if(APP.sessao?.perfil!=='ADM')return false;
+  try {
+    const idSolicitacao=crypto.randomUUID?.()||('ADM-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+    const r=await api('concluirReimpressaoCarta',{idCarta,idSolicitacao});
+    if(!r.evento||r.estado!=='REIMPRESSAO_FEITA')throw Error('A ação não foi confirmada pelo servidor. Atualize a lista.');
+    APP.acoesCartas=(APP.acoesCartas||[]).filter(a=>a.idCarta!==idCarta);
+    renderAcoesCartas();
+    feedbackAtualizacao((r.via?r.via+'ª via':'Reimpressão')+' marcada como feita. A carta voltou às pendências do encarregado.');
+    return true;
+  }catch(e){showMessage(e.message,'Não foi possível concluir a reimpressão',true);carregarAcoesCartas();return false;}
+}
 function cartasCapaFiltradas() {
   return filtroDeCartas({texto:$('filtro-capa').value,mes:$('filtro-capa-mes').value})
     .filter(c=>norm(c.status)==='NAO');
@@ -1814,6 +1933,10 @@ function onClickDelegado(e) {
     });
     return;
   }
+  const reimpOk=e.target.closest('.tm-reimpressao-ok');
+  if(reimpOk)return comBotaoCarregando(reimpOk,()=>concluirReimpressao(reimpOk.dataset.id),'Salvando…');
+  const novoControle=e.target.closest('.tm-enc-registrar');
+  if(novoControle)return comBotaoCarregando(novoControle,()=>registrarAcaoCartaEncarregado(novoControle.dataset.id,novoControle.dataset.status),'Registrando…');
   const assinar=e.target.closest('.carta-assinar');if(assinar)return comBotaoCarregando(assinar,()=>confirmarCarta(assinar.dataset.id),'Confirmando…');
   const folga=e.target.closest('.folga-status');if(folga)return comBotaoCarregando(folga,()=>mudarStatusFolga(folga.dataset.id,folga.dataset.status),'Salvando…');
   const planejar=e.target.closest('.acao-planejar');
@@ -1829,7 +1952,8 @@ function instalarAtualizacaoDeCartas(){
   botao.title='Recarregar as cartas da planilha, inclusive as assinaturas';
   acoes.appendChild(botao);cabecalho.appendChild(acoes);
   botao.addEventListener('click',()=>comBotaoCarregando(botao,async()=>{
-    return carregarCartas();
+    const [cartas,acoes]=await Promise.all([carregarCartas(),carregarAcoesCartas()]);
+    return cartas&&acoes;
   },'Atualizando cartas…','Cartas de ponto atualizadas.'));
 }
 // Sugestões próprias para que Enter selecione o nome, sem submeter o formulário.
@@ -1962,7 +2086,7 @@ function configurarEnterEntreCamposCarta(idFormulario='form-carta',idBotao='btn-
 }
 function registrarEventos() {
   instalarAtualizacaoDeCartas();
-  $('form-login').addEventListener('submit',e=>{e.preventDefault();login(e);});
+  $('form-login').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('botao-login'),()=>login(e),'Entrando no sistema…');});
   configurarAcessoEmail();
   configurarGestaoUsuarios();
   $('msg-fechar').addEventListener('click',fecharMensagem);
@@ -1972,10 +2096,11 @@ function registrarEventos() {
   $('btn-recarregar-horas').addEventListener('click',()=>comBotaoCarregando($('btn-recarregar-horas'),carregarSaldos,'Atualizando painel…','Painel atualizado com os últimos dados salvos.'));
   $('enc-recarregar-horas').addEventListener('click',()=>comBotaoCarregando($('enc-recarregar-horas'),carregarSaldos,'Atualizando lista…','Lista de funcionários atualizada.'));
   $('enc-busca-funcionario').addEventListener('input',renderFolgasEncarregado);
-  $('btn-sincronizar').addEventListener('click',()=>comBotaoCarregando($('btn-sincronizar'),sincronizar,'Sincronizando MobPonto…'));
+  $('btn-sincronizar').addEventListener('click',sincronizar);
   ['filtro-horas','filtro-empresa-horas','filtro-saldo'].forEach(id=>$(id).addEventListener(id==='filtro-horas'?'input':'change',renderSaldos));
   $('form-folga').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('salvar-folga'),()=>salvarFolga(e),'Salvando folga…');});
   $('filtro-folga-status').addEventListener('change',renderFolgas);
+  $('filtro-controle-enc').addEventListener('change',renderPendentes);
   $('form-carta').addEventListener('submit',e=>{e.preventDefault();if(APP.cartaEditando)comBotaoCarregando($('btn-salvar-carta'),()=>salvarCarta(e),'Salvando alterações…');else salvarCarta(e);});
   ['filtro-cartas','filtro-cartas-status','filtro-cartas-mes'].forEach(id=>$(id).addEventListener(id==='filtro-cartas'?'input':'change',renderCartas));
   $('limpar-filtro-cartas').addEventListener('click',()=>{$('filtro-cartas').value='';$('filtro-cartas-status').value='';$('filtro-cartas-mes').value='';renderCartas();});
@@ -2036,11 +2161,35 @@ function registrarEventos() {
   $('btn-cancelar-edicao-carta').addEventListener('click',()=>definirModoCarta());
   ['carta-ocorrencia','carta-correcao'].forEach(configurarCampoDataBR);
 }
+// V31 — no celular as tabelas viram cartões; cada célula recebe o nome da coluna.
+function rotularTabelasCartoes() {
+  document.querySelectorAll('table.tabela-cartoes').forEach(tabela=>{
+    const cab=[...tabela.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    tabela.querySelectorAll('tbody tr').forEach(tr=>{
+      if(tr.dataset.rotulado==='1')return;
+      tr.dataset.rotulado='1';
+      if(tr.children.length!==cab.length)return; // linhas de aviso (colspan)
+      [...tr.children].forEach((td,i)=>{td.dataset.label=cab[i];});
+    });
+  });
+}
+function instalarRotulosDeTabela() {
+  let agendado=false;
+  const rodar=()=>{if(agendado)return;agendado=true;requestAnimationFrame(()=>{agendado=false;rotularTabelasCartoes();});};
+  const observador=new MutationObserver(rodar);
+  document.querySelectorAll('table.tabela-cartoes tbody').forEach(tb=>observador.observe(tb,{childList:true}));
+  rodar();
+}
 document.addEventListener('DOMContentLoaded',()=>{
+  instalarRotulosDeTabela();
   prepararFilaCartas();
   registrarEventos();definirModoCarta();$('filtro-relatorio-mes').value=mesAtual();
+  // Novas solicitações de reimpressão e assinaturas aparecem no painel do ADM sem exigir F5.
+  setInterval(()=>{if(APP.sessao?.perfil==='ADM'&&APP.aba==='cartas'&&APP.subaba==='controle'&&!document.hidden)carregarAcoesCartas();},45000);
   // A faixa de meses é definida pelos dados efetivamente sincronizados em renderResumoBanco().
   setInterval(()=>{if(APP.sessao&&APP.sessao.dataLogin!==diaSessaoBrasil())encerrarSessaoLocal();},20000);
+  // Encarregado: 2ª vias concluídas pelo ADM aparecem sem precisar clicar em Atualizar.
+  setInterval(()=>{if(APP.sessao?.perfil==='ENCARREGADO'&&APP.aba==='pendentes'&&!document.hidden)carregarPendentes();},60000);
   verificarSessao();
 });
 
