@@ -2,10 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
   <title>Gestão de Ponto | Transmarina</title>
-  <link rel="stylesheet" href="ponto.css">
+  <link rel="stylesheet" href="ponto.css?v=31.0">
 </head>
 <body>
   <div class="modal-overlay" id="modal-login" aria-modal="true" role="dialog">
@@ -149,16 +149,17 @@
             <p class="enc-aviso-validacao" role="note">Cálculo dos dias baseado nos saldos da API. <strong>Em validação:</strong> foram encontradas divergências com a planilha de referência; confirme os saldos antes de conceder folgas.</p>
           </div>
           <div id="visao-horas-adm" class="visao-horas-adm">
-          <div class="section-header"><div><h2>Banco de horas — 3 meses</h2><p>Saldos mensais calculados a partir das medidas do MobPonto. Banco móvel = mês atual + dois anteriores. O mês atual pode mudar quando o ponto é corrigido.</p></div><div class="actions"><button class="btn secondary" id="btn-recarregar-horas">Recarregar painel</button><button class="btn primary" id="btn-sincronizar" data-admin>Sincronizar MobPonto</button></div></div>
+          <div class="section-header"><div><h2 class="sr-only">Banco de horas — 3 meses</h2><p>Saldos mensais calculados a partir das medidas do MobPonto. Banco móvel = mês atual + dois anteriores. O mês atual pode mudar quando o ponto é corrigido.</p></div><div class="actions"><button class="btn secondary" id="btn-recarregar-horas">Recarregar painel</button><button class="btn primary" id="btn-sincronizar" data-admin>Sincronizar MobPonto</button></div></div>
+          <div id="tm-estado-sincronizacao" class="tm-estado-sincronizacao" role="status" aria-live="polite" data-admin hidden></div>
           <div class="stat-grid"><div class="stat-card"><span>Funcionários ativos</span><strong id="stat-ativos">—</strong><small>última sincronização</small></div><div class="stat-card"><span>Saldo de banco positivo</span><strong id="stat-positivos">—</strong><small>últimos 3 meses</small></div><div class="stat-card"><span>Horas disponíveis (soma dos positivos)</span><strong id="stat-horas">—</strong><small>não equivale a folgas autorizadas</small></div><div class="stat-card"><span>Última atualização</span><strong class="stat-date" id="stat-atualizacao">—</strong><small>capturada pelo servidor</small></div></div>
           <div class="panel"><div class="panel-top"><div><h3>Saldo de horas por funcionário</h3><p class="muted" id="periodo-saldos">Período do banco: —</p></div><div class="filter-row"><input id="filtro-horas" type="search" placeholder="Buscar funcionário…" aria-label="Filtrar funcionários"><select id="filtro-empresa-horas" aria-label="Filtrar empresa"><option value="">Todas as empresas</option></select><select id="filtro-saldo"><option value="todos">Todos</option><option value="positivo">Saldo positivo</option><option value="negativo">Saldo negativo</option><option value="zero">Saldo zerado</option><option value="sem-dados">Histórico incompleto</option></select></div></div>
-            <div class="table-scroll" role="region" aria-label="Tabela de saldos mensais com rolagem horizontal" tabindex="0"><table class="tabela-horas"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>Funcionário</th><th>Empresa</th><th>Banco 3 meses</th><th id="horas-mes-0">Mês atual</th><th id="horas-mes-1">Mês anterior</th><th id="horas-mes-2">Há 2 meses</th><th>Horas trabalhadas</th><th>Extras normais</th><th>Extras FDS/feriado</th><th>Total extras mês</th><th>Atrasos/faltas</th><th>Adicional noturno</th><th>Planejamento</th></tr></thead><tbody id="tbody-horas"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody></table></div>
+            <div class="table-scroll" role="region" aria-label="Tabela de saldos mensais com rolagem horizontal" tabindex="0"><table class="tabela-horas tabela-cartoes"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>Funcionário</th><th>Empresa</th><th>Banco 3 meses</th><th id="horas-mes-0">Mês atual</th><th id="horas-mes-1">Mês anterior</th><th id="horas-mes-2">Há 2 meses</th><th>Horas trabalhadas</th><th>Extras normais</th><th>Extras FDS/feriado</th><th>Total extras mês</th><th>Atrasos/faltas</th><th>Adicional noturno</th><th>Planejamento</th></tr></thead><tbody id="tbody-horas"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody></table></div>
           </div>
           <p class="footnote"><b>Regra do banco de horas:</b> saldo mensal = horas trabalhadas + extras − horas previstas. No mês em andamento, o corte até ontem depende de jornada compatível e de sincronização antes do expediente. O banco é a soma dos últimos três meses, mas compensações e prescrições ainda não estão validadas; confira a folha antes de autorizar folgas. <b>SEM DADOS</b> indica um ou mais meses sem informação. O botão “Recarregar painel” lê o último resultado salvo; somente a sincronização consulta o MobPonto novamente.</p>
           </div>
         </section>
         <section id="sec-folgas" class="page">
-          <div class="section-header"><div><h2>Planejamento de folgas</h2><p>Registre a decisão do encarregado. Este controle não lança automaticamente abonos ou compensações no MobPonto.</p></div></div>
+          <div class="section-header"><div><h2 class="sr-only">Planejamento de folgas</h2><p>Registre a decisão do encarregado. Este controle não lança automaticamente abonos ou compensações no MobPonto.</p></div></div>
           <div class="two-columns">
             <div class="panel"><h3>Programar folga</h3><form id="form-folga" class="form-grid">
               <div class="wide carta-campo-autocomplete">
@@ -175,7 +176,7 @@
             </form></div>
             <div class="panel"><h3>Critérios para avaliação</h3><div class="info-row"><span>01</span><div><b>Conferir o banco de horas compensável</b><p>Horas extras do mês não provam um saldo disponível para folga.</p></div></div><div class="info-row"><span>02</span><div><b>Verificar a escala</b><p>Planeje a folga sem comprometer a cobertura do setor.</p></div></div><div class="info-row"><span>03</span><div><b>Validar a compensação</b><p>Alinhe com RH e política da empresa antes de marcar como concedida.</p></div></div></div>
           </div>
-          <div class="panel tm-folgas-historico"><div class="panel-top"><h3>Histórico de decisões</h3><select id="filtro-folga-status"><option value="">Todos os status</option><option value="PLANEJADA">Planejadas</option><option value="CONCEDIDA">Concedidas</option><option value="CANCELADA">Canceladas</option></select></div><div class="table-scroll" role="region" aria-label="Histórico de decisões sobre folgas" tabindex="0"><table class="tm-tabela-folgas"><colgroup><col class="tm-col-folga-pessoa"><col class="tm-col-folga-data"><col class="tm-col-folga-horas"><col class="tm-col-folga-status"><col class="tm-col-folga-responsavel"><col class="tm-col-folga-obs"><col class="tm-col-folga-acoes"></colgroup><thead><tr><th>Colaborador</th><th>Data</th><th>Horas</th><th>Status</th><th>Responsável</th><th>Observação</th><th class="tm-folga-acoes-titulo">Ações</th></tr></thead><tbody id="tbody-folgas"></tbody></table></div></div>
+          <div class="panel tm-folgas-historico"><div class="panel-top"><h3>Histórico de decisões</h3><select id="filtro-folga-status"><option value="">Todos os status</option><option value="PLANEJADA">Planejadas</option><option value="CONCEDIDA">Concedidas</option><option value="CANCELADA">Canceladas</option></select></div><div class="table-scroll" role="region" aria-label="Histórico de decisões sobre folgas" tabindex="0"><table class="tm-tabela-folgas tabela-cartoes"><colgroup><col class="tm-col-folga-pessoa"><col class="tm-col-folga-data"><col class="tm-col-folga-horas"><col class="tm-col-folga-status"><col class="tm-col-folga-responsavel"><col class="tm-col-folga-obs"><col class="tm-col-folga-acoes"></colgroup><thead><tr><th>Colaborador</th><th>Data</th><th>Horas</th><th>Status</th><th>Responsável</th><th>Observação</th><th class="tm-folga-acoes-titulo">Ações</th></tr></thead><tbody id="tbody-folgas"></tbody></table></div></div>
         </section>
 
         <section id="sec-cartas" class="page">
@@ -203,9 +204,15 @@
                 <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="btn-salvar-carta">Salvar carta</button><button class="btn subtle" type="button" id="btn-cancelar-edicao-carta" hidden>Cancelar edição</button></div>
                 <div class="wide tm-fila-cartas" id="tm-fila-cartas" role="status" aria-live="polite" hidden></div>
               </form></div>
-              <div class="panel"><h3>Resumo das cartas</h3><div class="mini-metrics"><div><strong id="cartas-total">0</strong><span>Registradas</span></div><div><strong id="cartas-pendentes">0</strong><span>Sem assinatura</span></div><div><strong id="cartas-assinadas">0</strong><span>Assinadas</span></div></div><div class="note">As colunas originais da sua aba no Google Sheets são mantidas. Novos campos do Excel são acrescentados ao final, sem sobrescrever históricos.</div></div>
+              <div class="panel tm-resumo-cartas"><h3>Resumo das cartas</h3><div class="mini-metrics"><div><strong id="cartas-total">0</strong><span>Registradas</span></div><div><strong id="cartas-pendentes">0</strong><span>Sem assinatura</span></div><div><strong id="cartas-assinadas">0</strong><span>Assinadas</span></div></div>
+              <section class="tm-avisos-cartas" aria-label="Ações dos encarregados">
+                <div class="tm-avisos-cabecalho"><h4>Ações dos encarregados</h4><span class="tm-avisos-contador" id="tm-total-acoes-cartas">0</span></div>
+                <div class="tm-avisos-colunas" aria-hidden="true"><span>Colaborador / carta</span><span>Marcado por</span><span>Status</span></div>
+                <div id="tm-lista-acoes-cartas" class="tm-avisos-lista" aria-live="polite"><p class="empty">Carregando movimentações…</p></div>
+              </section>
             </div>
-            <div class="panel"><div class="panel-top"><h3>Histórico e controle</h3><div class="filter-row"><input type="search" id="filtro-cartas" placeholder="Buscar nome ou responsável…"><select id="filtro-cartas-status"><option value="">Todos os status</option><option value="NÃO">Não assinadas</option><option value="SIM">Assinadas</option></select><input type="month" id="filtro-cartas-mes" aria-label="Mês das cartas"><button class="btn subtle" id="limpar-filtro-cartas" type="button">Limpar</button></div></div><div class="table-scroll"><table><thead><tr><th>Ocorrência</th><th>Colaborador</th><th>Entregue ao responsável</th><th>Correção</th><th>Assinado</th><th>Observações</th><th>Ações</th></tr></thead><tbody id="tbody-cartas"></tbody></table></div></div>
+            </div>
+            <div class="panel"><div class="panel-top"><h3>Histórico e controle</h3><div class="filter-row"><input type="search" id="filtro-cartas" placeholder="Buscar nome ou responsável…"><select id="filtro-cartas-status"><option value="">Todos os status</option><option value="NÃO">Não assinadas</option><option value="SIM">Assinadas</option></select><input type="month" id="filtro-cartas-mes" aria-label="Mês das cartas"><button class="btn subtle" id="limpar-filtro-cartas" type="button">Limpar</button></div></div><div class="table-scroll"><table class="tabela-cartoes"><thead><tr><th>Ocorrência</th><th>Colaborador</th><th>Entregue ao responsável</th><th>Correção</th><th>Assinado</th><th>Observações</th><th>Ações</th></tr></thead><tbody id="tbody-cartas"></tbody></table></div></div>
           </div>
 
           <div class="subpage" id="sub-capa">
@@ -234,17 +241,18 @@
               <div class="aviso-corte" id="aviso-corte-resumo" role="status"></div>
               <div class="relatorio-resumo-cabecalho"><h3 id="resumo-titulo-meses">Banco dos últimos 3 meses</h3><span id="resumo-atualizado" class="muted"></span></div>
               <div class="table-scroll" tabindex="0" role="region" aria-label="Resumo de banco de horas e equivalência em folgas">
-                <table class="tabela-resumo-grupo"><thead><tr><th>FUNCIONÁRIO</th><th id="resumo-mes-2">Mês -2</th><th id="resumo-mes-1">Mês -1</th><th id="resumo-mes-0">Mês atual</th><th id="resumo-total-titulo">BANCO NO PERÍODO</th><th>DIAS EQUIVALENTES*</th></tr></thead><tbody id="tbody-resumo-grupo"><tr><td colspan="6" class="empty">Carregando saldos…</td></tr></tbody></table>
+                <table class="tabela-resumo-grupo tabela-cartoes"><thead><tr><th>FUNCIONÁRIO</th><th id="resumo-mes-2">Mês -2</th><th id="resumo-mes-1">Mês -1</th><th id="resumo-mes-0">Mês atual</th><th id="resumo-total-titulo">BANCO NO PERÍODO</th><th>DIAS EQUIVALENTES*</th></tr></thead><tbody id="tbody-resumo-grupo"><tr><td colspan="6" class="empty">Carregando saldos…</td></tr></tbody></table>
               </div>
               <p class="footnote"><b>*Dias equivalentes (regra do Excel):</b> some os saldos dos três meses sincronizados; arredonde os minutos do total para horas inteiras (30 minutos ou mais arredondam a hora para cima); divida pela jornada de 07:20, exceto os três funcionários cadastrados com jornada 08:48; depois arredonde a fração de dia (0,5 ou mais sobe). Saldos negativos ou nulos resultam em 0 dia disponível; se faltar algum mês, exibimos um traço, nunca zero inventado. A equivalência em dias é apenas uma simulação, sujeita à conferência e aprovação. <b>Atenção:</b> o período de 01 até ontem é uma referência visual do mês mais recente; os valores são os saldos mensais da última sincronização, sem recorte diário. Compensações e prescrições serão configuradas em outra etapa.</p>
             </div>
           </div>
         </section>
 
-        <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Cartas pendentes de assinatura</h2><p>O encarregado pode confirmar somente as cartas que ainda não estão assinadas.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div><div class="panel"><div id="lista-pendentes" class="pending-list"></div></div></section>
+        <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Controle de cartas do encarregado</h2><p>Marque as assinaturas recebidas ou solicite reimpressão. As ações são registradas separadamente e não alteram o histórico do administrador.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div>
+          <div class="panel"><div class="tm-pendentes-filtros"><label for="filtro-controle-enc">Exibir cartas</label><select id="filtro-controle-enc"><option value="PENDENTE">Ainda pendentes / reimpressão</option><option value="ASSINADA">Assinadas</option><option value="TODAS">Todas</option></select></div><div id="lista-pendentes" class="pending-list"></div></div></section>
         <section id="sec-usuarios" class="page" data-admin aria-labelledby="titulo-usuarios">
           <div class="section-header">
-            <div><h2 id="titulo-usuarios">Gerenciar usuários</h2><p>Os cadastros só recebem acesso após a confirmação do e-mail e sua aprovação.</p></div>
+            <div><h2 id="titulo-usuarios" class="sr-only">Gerenciar usuários</h2><p>Os cadastros só recebem acesso após a confirmação do e-mail e sua aprovação.</p></div>
             <button class="btn secondary" type="button" id="btn-atualizar-usuarios">Atualizar solicitações</button>
           </div>
           <div class="tm-usuarios-resumo" aria-live="polite">
@@ -268,6 +276,6 @@
       </main>
     </div>
   </div>
-  <script src="ponto.js?v=30.21"></script>
+  <script src="ponto.js?v=31.0"></script>
 </body>
 </html>
