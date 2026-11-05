@@ -1528,3 +1528,227 @@ button.tm-carregando .tm-logo-indisponivel img {display:none}
   .tm-folgas-historico .table-scroll {overflow-x:auto;}
   .tm-folgas-historico .tm-tabela-folgas {min-width:1080px;}
 }
+
+/* V30.22 — permissões, avisos independentes e status de sincronização */
+.tm-resumo-cartas {min-width:0;}
+.tm-avisos-cartas {margin-top:20px;border-top:1px solid #e3ebf2;padding-top:16px;min-width:0;}
+.tm-avisos-cabecalho {display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:13px;}
+.tm-avisos-cabecalho h4 {margin:0;color:#153b5c;font-size:15px;}
+.tm-avisos-contador {border-radius:999px;background:#eaf1f8;color:#244c6e;font-weight:800;padding:3px 10px;font-size:12px;}
+.tm-avisos-colunas,.tm-aviso-carta {display:grid;grid-template-columns:minmax(120px,1.5fr) minmax(90px,.85fr) minmax(82px,.8fr);gap:8px;align-items:center;}
+.tm-avisos-colunas {font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#708397;background:#f3f7fb;padding:9px 10px;font-weight:800;border-radius:8px;}
+.tm-avisos-lista {max-height:305px;overflow-y:auto;overscroll-behavior:contain;}
+.tm-aviso-carta {padding:11px 10px;border-bottom:1px solid #e8edf3;background:#fff;font-size:12px;}
+.tm-aviso-carta:last-child {border-bottom:0;}
+.tm-aviso-nome {min-width:0;}
+.tm-aviso-nome strong {display:block;overflow-wrap:anywhere;font-size:11px;color:#173d5e;line-height:1.35;}
+.tm-aviso-nome small {display:block;color:#738396;font-size:11px;margin-top:3px;}
+.tm-aviso-quem {overflow-wrap:anywhere;font-weight:700;color:#344f68;}
+.tm-aviso-situacao {display:inline-block;justify-self:start;border-radius:6px;padding:6px 7px;font-weight:800;font-size:10px;text-align:center;}
+.tm-aviso-assinada {background:#e0f5e9;color:#146d41;}
+.tm-aviso-reimpressao {background:#fff0d8;color:#8b5413;}
+.tm-avisos-vazio {font-size:12px;color:#718297;background:#f7fafc;border-radius:8px;padding:16px;margin:0;}
+.tm-folga-aguarda {font-weight:700;color:#5d6e83;font-size:11px;}
+.tm-estado-sincronizacao {margin:0 0 15px;padding:11px 15px;font-size:12px;border:1px solid #cbddeb;border-radius:9px;line-height:1.5;}
+.tm-estado-sincronizacao.tm-sync-ativo {background:#edf6ff;color:#174d7d;border-left:4px solid #2678b9;}
+.tm-estado-sincronizacao.tm-sync-ok {background:#ebf7ee;color:#176544;border-left:4px solid #238351;}
+.tm-estado-sincronizacao.tm-sync-falha {background:#fff4ec;color:#92500d;border-left:4px solid #de8e27;}
+.tm-pendentes-filtros {display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.tm-pendentes-filtros label {font-weight:750;font-size:12px;color:#536a7e;}
+.tm-pendentes-filtros select {min-height:38px;max-width:100%;border:1px solid #dae5ef;border-radius:8px;padding:6px 10px;}
+.tm-pendente-info {min-width:0;flex:1;}
+.tm-pendente-acoes {display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.tm-pendente-acoes .btn {font-size:12px;padding:9px 11px;white-space:normal;}
+.tm-mov-status {display:inline-flex;align-items:center;padding:4px 8px;margin-top:7px;border-radius:6px;font-size:11px;font-weight:750;}
+.tm-enc-assinada {background:#dcf4e5;color:#1b7547;}
+.tm-enc-reimpressao {background:#fff1da;color:#935c14;}
+.tm-enc-pendente {background:#eaf2fa;color:#345d83;}
+@media(max-width:780px) { .tm-pendente-acoes {justify-content:flex-start;width:100%;} }
+@media(max-width:420px) { .tm-avisos-colunas,.tm-aviso-carta {grid-template-columns:minmax(90px,1.3fr) minmax(75px,.8fr) minmax(76px,.8fr);gap:5px;} }
+
+.tm-pendentes-filtros[hidden],.tm-estado-sincronizacao[hidden] {display:none!important;}
+
+
+/* ======================================================================
+   V31 — Responsividade (tablet e celular) + botão OK de reimpressão
+   ====================================================================== */
+
+/* Botão OK da 2ª via, na lista "Ações dos encarregados". */
+.tm-aviso-acao {display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;}
+.tm-aviso-acao .tm-reimpressao-ok {min-width:64px;}
+
+/* Base para todos os tamanhos */
+html {-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+img,svg,canvas {max-width:100%;}
+.btn,.nav-button,.subnav-btn {touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+.two-columns {grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);}
+.table-scroll {-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;}
+
+/* Tablet (até 1024px): menu lateral mais estreito */
+@media (max-width:1024px) and (min-width:781px) {
+  .shell {grid-template-columns:200px minmax(0,1fr);}
+  .sidebar {padding:22px 12px;}
+  .nav-button {padding:11px 10px;font-size:13px;}
+  main {padding:22px 20px 60px;}
+  .topbar {padding:22px 20px;}
+  .stat-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+  .two-columns,.report-grid {grid-template-columns:minmax(0,1fr);}
+}
+
+/* Celular e tablet pequeno (até 780px) */
+@media (max-width:780px) {
+  body {padding-bottom:0;}
+  .two-columns,.report-grid {grid-template-columns:minmax(0,1fr);}
+
+  /* Cabeçalho compacto: logo + "Sair". O menu vira barra inferior fixa. */
+  .sidebar {
+    position:relative;display:flex;flex-direction:row;align-items:center;justify-content:space-between;height:auto;min-height:0;
+    gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));
+  }
+  .brand {padding:0;gap:10px;min-width:0;}
+  .brand img {width:36px;height:36px;padding:3px;}
+  .brand strong {font-size:12px;white-space:nowrap;}
+  .brand small {display:none;}
+  .sidebar-bottom {display:flex;margin:0;padding:0;border:0;gap:8px;}
+  #perfil-tag,.sidebar .sidebar-bottom #perfil-tag {display:none;}
+  .logout {min-height:38px;padding:8px 14px;font-size:12px;}
+
+  .main-nav {
+    position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;gap:0;overflow:visible;
+    background:var(--navy);border-top:1px solid #ffffff2e;
+    padding:4px 4px calc(4px + env(safe-area-inset-bottom));
+    box-shadow:0 -6px 22px rgba(10,30,52,.22);
+  }
+  .main-nav .nav-button {
+    flex:1 1 0;min-width:0;width:auto;position:relative;
+    flex-direction:column;justify-content:center;align-items:center;text-align:center;
+    gap:2px;padding:7px 2px 6px;min-height:54px;border-radius:10px;
+    font-size:10px;line-height:1.15;font-weight:650;white-space:normal;
+  }
+  .main-nav .nav-icon {display:inline-flex;font-size:20px;width:auto;height:22px;}
+  .main-nav .count-badge {
+    position:absolute;top:2px;left:calc(50% + 6px);margin:0;padding:0 5px;min-width:17px;
+    height:17px;display:grid;place-items:center;font-size:10px;line-height:1;
+    background:#e5484d;color:#fff;font-weight:800;
+  }
+  .main-nav .count-badge:empty,.main-nav .count-badge[data-zero="1"] {display:none;}
+
+  .topbar {padding:14px 16px;gap:10px;}
+  .topbar h1 {font-size:19px;margin-top:3px;}
+  .eyebrow {font-size:9px;letter-spacing:1.1px;}
+  main {padding:16px 12px calc(92px + env(safe-area-inset-bottom));}
+
+  /* Cabeçalhos de seção e botões de ação */
+  .section-header {margin-bottom:16px;}
+  .section-header h2 {font-size:19px;}
+  .section-header h3 {font-size:16px;}
+  .section-header p {font-size:13px;}
+  .section-header .actions,.section-header>.btn,.report-actions {width:100%;margin-top:12px;}
+  .section-header .actions .btn,.section-header>.btn,.report-actions .btn {flex:1 1 150px;}
+  .btn {min-height:44px;padding:11px 14px;font-size:13px;}
+  .btn.tiny {min-height:40px;padding:9px 12px;font-size:12px;}
+
+  /* Campos: 16px evita o zoom automático do iPhone */
+  input,select,textarea {font-size:16px;min-height:46px;}
+  input[type=checkbox] {width:22px;height:22px;min-height:22px;}
+  .filter-row {flex-direction:column;align-items:stretch;width:100%;gap:8px;}
+  .filter-row input,.filter-row select,.filter-row .btn {width:100%;max-width:none;}
+  .panel-top {display:block;}
+  .panel-top .filter-row {margin-top:12px;}
+  .panel-top > select {width:100%;margin-top:10px;}
+  .form-grid {grid-template-columns:minmax(0,1fr);}
+  .carta-form-acoes .btn {min-width:100%;}
+  .resumo-filtros {grid-template-columns:minmax(0,1fr);}
+
+  .subnav {margin:0 -12px 18px;padding:0 12px;scroll-snap-type:x proximity;scrollbar-width:none;}
+  .subnav::-webkit-scrollbar {display:none;}
+  .subnav-btn {scroll-snap-align:start;padding:13px 14px;font-size:13px;}
+
+  .panel {padding:14px;margin-bottom:14px;border-radius:12px;}
+  .stat-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px;}
+  .stat-card {padding:13px;}
+  .stat-card span {font-size:11px;}
+  .stat-card strong {font-size:22px;}
+  .stat-card small {font-size:10px;}
+  .mini-metrics {margin:16px 0;}
+
+  /* Tabelas rolando na horizontal (capa, ranking): altura limitada */
+  .table-scroll {max-height:62vh;}
+
+  /* Tabelas em cartões (horas, histórico de cartas, folgas, resumo) */
+  .table-scroll:has(> table.tabela-cartoes) {max-height:none;overflow:visible;}
+  table.tabela-cartoes,table.tabela-cartoes tbody {display:block;width:100%;min-width:0!important;}
+  table.tabela-cartoes colgroup,table.tabela-cartoes thead {display:none;}
+  table.tabela-cartoes tbody tr {
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;
+    margin:0 0 12px;padding:14px;background:#fff;border:1px solid var(--border);
+    border-radius:12px;box-shadow:var(--shadow);
+  }
+  table.tabela-cartoes tbody tr:hover {background:#fff;}
+  table.tabela-cartoes tbody tr td {
+    display:block;min-width:0!important;padding:0!important;border:0!important;
+    border-radius:0!important;background:transparent!important;box-shadow:none!important;
+    position:static!important;text-align:left!important;white-space:normal;
+    font-size:13px;overflow-wrap:anywhere;
+  }
+  table.tabela-cartoes tbody tr td[data-label]::before {
+    content:attr(data-label);display:block;margin-bottom:3px;
+    font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#7a8da1;
+  }
+  table.tabela-cartoes tbody tr td:first-child {grid-column:1/-1;font-size:14px;}
+  table.tabela-cartoes tbody tr td:first-child::before {display:none;}
+  table.tabela-cartoes tbody tr td:last-child {grid-column:1/-1;}
+  table.tabela-cartoes tbody tr td.empty {grid-column:1/-1;padding:24px 8px!important;text-align:center!important;}
+  table.tabela-cartoes tbody tr:has(> td.empty) {display:block;}
+  table.tabela-cartoes tbody tr td.empty::before {display:none;}
+  table.tabela-cartoes td .block {max-width:none;}
+  table.tabela-cartoes td .saldo {min-width:0;}
+  table.tabela-cartoes .cell-actions,table.tabela-cartoes .carta-acoes,
+  table.tabela-cartoes .tm-folga-botoes {flex-wrap:wrap;min-width:0;justify-content:flex-start;}
+  table.tabela-cartoes .cell-actions .btn,table.tabela-cartoes .tm-folga-botoes .btn {flex:1 1 auto;}
+  table.tabela-cartoes .acao-planejar {width:100%;}
+  table.tabela-cartoes .folga-dia {min-width:0;}
+
+  /* Gráficos sem rolagem lateral */
+  .bar-chart .bar-row {min-width:0;gap:8px;}
+  .bar-chart .bar-name {flex:0 0 38%;width:38%;white-space:normal;line-height:1.2;font-size:11px;}
+  .bar-chart .bar-count {font-size:14px;min-width:28px;}
+  .pie-container {min-height:0;}
+
+  /* Cartas pendentes, ações dos encarregados e usuários */
+  .pending-item {padding:14px 2px;}
+  .tm-pendente-acoes {width:100%;}
+  .tm-pendente-acoes .btn {flex:1 1 100%;}
+  .tm-avisos-lista {max-height:none;}
+  .tm-aviso-acao .btn {width:100%;}
+  .tm-usuario-acoes .btn,.tm-usuario-perfil-edicao .btn {min-height:44px;}
+
+  /* Janelas e login */
+  .modal-overlay {padding:12px;align-items:end;}
+  .login-card,.message-card {max-width:none;max-height:calc(100dvh - 24px);padding:22px 18px;border-radius:16px;}
+  .login-brand {margin-bottom:22px;}
+  .tm-modal-excluir {width:calc(100vw - 24px);padding:24px 16px 18px;}
+  .tm-exclusao-acoes .btn {flex:1;min-width:0;}
+  .tm-feedback-atualizacao {
+    left:12px;right:12px;max-width:none;
+    bottom:calc(78px + env(safe-area-inset-bottom));
+  }
+  .tm-estado-sincronizacao {font-size:12px;padding:10px 12px;}
+  .enc-busca-funcionario {max-width:none;}
+  .visao-horas-encarregado .section-header {display:block;}
+}
+
+/* Celulares estreitos */
+@media (max-width:380px) {
+  .brand strong {display:none;}
+  .stat-grid {grid-template-columns:minmax(0,1fr);}
+  table.tabela-cartoes tbody tr {grid-template-columns:minmax(0,1fr);}
+  .main-nav .nav-button {font-size:9px;}
+}
+
+/* Celular deitado: menos altura ocupada pelo cabeçalho */
+@media (max-width:900px) and (orientation:landscape) and (max-height:480px) {
+  .main-nav .nav-button {min-height:44px;flex-direction:row;gap:6px;font-size:11px;}
+  .main-nav .nav-icon {height:auto;font-size:16px;}
+  main {padding-bottom:70px;}
+}
