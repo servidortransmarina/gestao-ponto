@@ -79,47 +79,112 @@ function ontem() {
   const d=new Date(); d.setDate(d.getDate()-1);
   return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
 }
-// Alguns navegadores interpretam o ano digitado "26" como 0026 no input date.
+// V30.14 — O campo nativo type=date do Chrome pode completar o ano antes
+// do fim da digitação (por exemplo, 2026 virava 2006). Para entrada manual,
+// usar texto DD/MM/AAAA; converter para AAAA-MM-DD apenas ao chamar a API.
+function dataParaISO(valor) {
+  const texto=String(valor??'').trim();
+  if(!texto)return '';
+  let ano,mes,dia;
+  let m=texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/);
+  if(m){ano=Number(m[1]);mes=Number(m[2]);dia=Number(m[3]);}
+  else {
+    m=texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if(m){
+      dia=Number(m[1]);mes=Number(m[2]);
+      ano=m[3].length===2?2000+Number(m[3]):Number(m[3]);
+    }else{
+      // Algumas datas antigas do Google Sheets chegam como Date.toString()
+      // em inglês (ex.: "Wed Nov 04 2026 00:00:00 GMT-0300").
+      // Converter para a data LOCAL de São Paulo antes de preencher o campo.
+      const d=new Date(texto);
+      if(Number.isNaN(d.getTime()))return '';
+      const partes=new Intl.DateTimeFormat('en-GB',{
+        timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric'
+      }).formatToParts(d);
+      const valor=tipo=>Number(partes.find(p=>p.type===tipo)?.value);
+      dia=valor('day');mes=valor('month');ano=valor('year');
+    }
+  }
+  if(ano<1900||ano>2100||mes<1||mes>12||dia<1||dia>31)return '';
+  const ultimoDia=new Date(ano,mes,0).getDate();
+  if(dia>ultimoDia)return '';
+  return `${String(ano).padStart(4,'0')}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+}
+function dataISOParaCampo(valor) {
+  const texto=String(valor??'').trim();
+  const iso=dataParaISO(texto);
+  if(!iso)return texto;
+  const [ano,mes,dia]=iso.split('-');
+  return `${dia}/${mes}/${ano.slice(-2)}`;
+}
 function normalizarAnoDaData(input) {
-  if(!input?.value)return true;
-  const v=input.value, m=v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(!m)return false;
-  const ano=Number(m[1]);
-  if(ano>=0&&ano<=99)input.value=String(2000+ano)+'-'+m[2]+'-'+m[3];
-  return /^\d{4}-\d{2}-\d{2}$/.test(input.value);
+  if(!input)return false;
+  if(!String(input.value||'').trim())return !input.required;
+  const iso=dataParaISO(input.value);
+  if(!iso)return false;
+  input.value=dataISOParaCampo(iso);
+  return true;
+}
+function configurarCampoDataBR(id) {
+  const input=$(id);
+  if(!input)return;
+  input.placeholder='DD/MM/AA';
+  input.addEventListener('input',()=>{
+    // A máscara insere as barras sem alterar o ano enquanto a pessoa digita.
+    const valor=input.value.trim();
+    if(/^\d{4}-\d{2}-\d{2}$/.test(valor)){
+      input.value=dataISOParaCampo(valor);return;
+    }
+    const numeros=valor.replace(/\D/g,'').slice(0,8);
+    input.value=numeros.length>4
+      ?`${numeros.slice(0,2)}/${numeros.slice(2,4)}/${numeros.slice(4)}`
+      :numeros.length>2?`${numeros.slice(0,2)}/${numeros.slice(2)}`:numeros;
+  });
+  input.addEventListener('blur',()=>normalizarAnoDaData(input));
+  input.addEventListener('change',()=>normalizarAnoDaData(input));
 }
 // Converte datas para a apresentação brasileira, sem mudar o formato enviado à API.
 // Aceita datas do Sheets, ISO, dd/mm/aaaa, timestamps e Date.toString() em inglês.
 const formatoDiaBR = new Intl.DateTimeFormat('pt-BR', {
-  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric'
+  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit'
 });
 const formatoHoraBR = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
 });
 function formatarDataBR(valor, incluirHora = false) {
-  if (valor === null || valor === undefined || String(valor).trim() === '') return '—';
-  const texto = String(valor).trim();
-  // As datas sem fuso não podem ser convertidas com Date('AAAA-MM-DD'),
-  // pois isso pode subtrair um dia no fuso brasileiro.
-  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/i);
-  if (iso) {
-    const [, ano, mes, dia, hora, minuto, fuso] = iso;
-    if (fuso) {
-      const instante = new Date(texto.replace(' ', 'T'));
-      if (!Number.isNaN(instante.getTime())) {
-        return formatoDiaBR.format(instante) + (incluirHora ? ' ' + formatoHoraBR.format(instante) : '');
+  if(valor === null || valor === undefined || String(valor).trim() === '')return '—';
+  const texto=String(valor).trim();
+
+  // Datas ISO sem fuso são datas de calendário: NÃO passar por Date(),
+  // pois 00:00 UTC pode virar o dia anterior no Brasil.
+  const iso=texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/i);
+  if(iso){
+    const [,ano,mes,dia,hora,minuto,fuso]=iso;
+    if(fuso){
+      const instante=new Date(texto.replace(' ','T'));
+      if(!Number.isNaN(instante.getTime())){
+        return formatoDiaBR.format(instante)+(incluirHora?' '+formatoHoraBR.format(instante):'');
       }
     }
-    return `${dia}/${mes}/${ano}` + (incluirHora && hora ? ` ${hora}:${minuto}` : '');
+    return `${dia}/${mes}/${ano.slice(-2)}`+(incluirHora&&hora?` ${hora}:${minuto}`:'');
   }
-  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ ,T]+(\d{2}):(\d{2}))?/);
-  if (br) return `${br[1]}/${br[2]}/${br[3]}` + (incluirHora && br[4] ? ` ${br[4]}:${br[5]}` : '');
-  // Exemplo: 'Thu Oct 29 2026 11:21:00 GMT-0300 (Brasilia Standard Time)'.
-  const instante = new Date(texto);
-  if (!Number.isNaN(instante.getTime())) {
-    return formatoDiaBR.format(instante) + (incluirHora ? ' ' + formatoHoraBR.format(instante) : '');
+
+  const br=texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:[ ,T]+(\d{2}):(\d{2}))?$/);
+  if(br){
+    const [,dia,mes,ano,hora,minuto]=br;
+    const valido=dataParaISO(`${dia}/${mes}/${ano}`);
+    if(valido)return `${dia.padStart(2,'0')}/${mes.padStart(2,'0')}/${valido.slice(2,4)}`+
+      (incluirHora&&hora?` ${hora}:${minuto}`:'');
   }
-  return texto; // Não inventar uma data quando a origem é desconhecida.
+
+  // O Google Sheets pode devolver a data no formato textual inglês.
+  const instante=new Date(texto);
+  if(!Number.isNaN(instante.getTime())){
+    return formatoDiaBR.format(instante)+(incluirHora?' '+formatoHoraBR.format(instante):'');
+  }
+  console.warn('Formato de data não reconhecido:',texto);
+  return '—';
 }
 const fmtData = x => formatarDataBR(x);
 const fmtDataHora = x => formatarDataBR(x, true);
@@ -699,15 +764,45 @@ function preencherPlanejamento(f) {
   atualizarEmpresaFolga(f);
   $('folga-data').focus();
 }
+// V30.17: o botão não espera a sincronização inteira na mesma requisição.
+// Cada consulta ao estado dura poucos segundos; uma tarefa demorada não
+// estoura o limite de 55 segundos do fetch nem é disparada duas vezes.
 async function sincronizar() {
-  if(APP.sessao?.perfil!=='ADM')return;
+  if(APP.sessao?.perfil!=='ADM')return false;
+  const usuario=APP.sessao.usuario;
   try {
-    const r=await api('sincronizarMobPonto');
-    const [atualizouSaldos]=await Promise.all([carregarSaldos(),carregarFuncionarios()]);
-    if(atualizouSaldos===false) {showMessage('MobPonto sincronizado, mas não foi possível recarregar o painel. Use Recarregar painel.','Atualização parcial',true);return false;}
-    showMessage(`${r.resultado.total} funcionários sincronizados nas duas empresas.`,'Sincronização concluída');
-    return true;
-  }catch(e){showMessage(e.message,'Não foi possível sincronizar',true);return false;}
+    const inicio=await api('iniciarSincronizacaoMob');
+    const id=inicio.id;
+    if(!id)throw Error('O servidor não confirmou o agendamento da sincronização.');
+    feedbackAtualizacao('Sincronização agendada. O painel será atualizado ao concluir.');
+    let estado=inicio;
+    const limite=Date.now()+11*60*1000;
+    while(Date.now()<limite) {
+      if(APP.sessao?.usuario!==usuario)return false;
+      if(estado.estado==='CONCLUIDA') {
+        const resultado=estado.resultado||{};
+        const [ok]=await Promise.all([carregarSaldos(),carregarFuncionarios()]);
+        if(ok===false){
+          showMessage('Sincronização concluída, mas o painel não pôde ser recarregado. Clique em Recarregar painel.','Atualização parcial',true);
+          return false;
+        }
+        showMessage(`${resultado.total||'Os'} funcionários foram sincronizados. Os valores já estão atualizados no painel.`,
+          'Sincronização concluída');
+        return true;
+      }
+      if(estado.estado==='FALHOU'){
+        throw Error(estado.erro||'A sincronização falhou. Os saldos anteriores foram preservados.');
+      }
+      await new Promise(resolve=>setTimeout(resolve,6500));
+      if(APP.sessao?.usuario!==usuario)return false;
+      estado=await api('estadoSincronizacaoMob',{id});
+    }
+    showMessage('A sincronização ainda pode estar sendo processada pelo Apps Script. Não inicie outra operação agora; use Atualizar painel para conferir os dados.','Sincronização em andamento');
+    return false;
+  }catch(e){
+    showMessage(e.message,'Não foi possível sincronizar',true);
+    return false;
+  }
 }
 // V26 — folgas no mesmo padrão visual das cartas, com empresa vinda da base.
 // Combina nome + empresa para não confundir homônimos das duas empresas.
@@ -760,7 +855,7 @@ function configurarSugestaoFolga() {
       .slice(0,8);
     if(!opcoes.length){fechar();return;}
     indice=0;
-    lista.innerHTML=opcoes.map((f,i)=>`<div class="carta-sugestao-item" id="folga-sugestao-${i}" role="option" data-index="${i}" aria-selected="${i===0}"><strong>${esc(f.nome)}</strong><small class="block">${esc(f.empresa)}</small></div>`).join('');
+    lista.innerHTML=opcoes.map((f,i)=>`<div class="carta-sugestao-item" id="folga-sugestao-${i}" role="option" data-index="${i}" aria-selected="${i===0}"><strong style="display:inline-block;margin-right:12px;vertical-align:middle;">${esc(f.nome)}</strong><small style="display:inline-block;vertical-align:middle;color:#5f6f86;font-weight:600;letter-spacing:.01em;">${esc(f.empresa)}</small></div>`).join('');
     lista.hidden=false;campo.setAttribute('aria-expanded','true');marcar();
   }
   campo.addEventListener('input',()=>{$('folga-empresa').value='';atualizarEmpresaFolga();atualizar();});
@@ -801,26 +896,60 @@ async function salvarFolga(e) {
     if(!funcionario){atualizarEmpresaFolga();throw Error('Selecione um funcionário da lista para identificar a empresa.');}
     if(!normalizarAnoDaData($('folga-data')))throw Error('Confira a data da folga.');
     const dados={funcionario:funcionario.nome,empresa:funcionario.empresa,cpf:funcionario.cpf||'',
-      dataFolga:$('folga-data').value,horasPlanejadas:$('folga-horas').value.trim(),
+      dataFolga:dataParaISO($('folga-data').value),horasPlanejadas:$('folga-horas').value.trim(),
       observacoes:$('folga-obs').value.trim()};
     const r=await api('salvarFolga',{dados});
     if(!r.folga)throw Error('A gravação não foi confirmada com os dados da folga. Atualize a lista para verificar.');
     APP.folgas.unshift(r.folga);renderFolgas();
-    $('form-folga').reset();$('folga-horas').value='08:00';atualizarEmpresaFolga();
+    $('form-folga').reset();prepararCamposFormularioFolga();atualizarEmpresaFolga();
     feedbackAtualizacao('Folga salva no Google Sheets.');return true;
   }catch(err){showMessage(err.message,'Não foi possível registrar',true);return false;}
 }
 async function carregarFolgas() {
   try{APP.folgas=(await api('getFolgas')).dados||[];renderFolgas();}
-  catch(e){$('tbody-folgas').innerHTML=`<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`;}
+  catch(e){$('tbody-folgas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;}
+}
+// V30.18 — A data do Histórico de decisões sempre vem em DD/MM/AA.
+// O campo 'Data Folga' da planilha é devolvido como ISO pelo Apps Script,
+// mas também aceitamos formatos antigos em inglês sem exibi-los na tabela.
+function formatarDataHistoricoFolga(valor) {
+  const iso=dataParaISO(valor);
+  if(!iso)return '—';
+  return `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(2,4)}`;
+}
+// V30.19 — "Horas previstas" não é uma data. Trata HH:MM e legados do Sheets
+// que chegam indevidamente como texto "Sat Dec 30 1899 08:48:00 GMT-0306".
+function formatarHorasHistoricoFolga(valor) {
+  const texto=String(valor??'').trim();
+  if(!texto)return '—';
+  let m=texto.match(/^(\d{1,3}):([0-5]\d)(?::[0-5]\d)?$/);
+  if(m)return `${String(Number(m[1])).padStart(2,'0')}:${m[2]}`;
+  m=texto.match(/\b(?:1899|1900)\s+(\d{1,2}):([0-5]\d):[0-5]\d\b/i);
+  if(m)return `${m[1].padStart(2,'0')}:${m[2]}`;
+  // Valor bruto numérico de hora do Google Sheets (fração de um dia).
+  if(/^(?:0(?:\.\d+)?|1(?:\.0+)?)$/.test(texto)){
+    const minutos=Math.round(Number(texto)*24*60);
+    return `${String(Math.floor(minutos/60)).padStart(2,'0')}:${String(minutos%60).padStart(2,'0')}`;
+  }
+  console.warn('Horas de folga não reconhecidas:',texto);
+  return '—';
 }
 function renderFolgas() {
   const status=$('filtro-folga-status').value;
   const items=APP.folgas.filter(f=>!status||f.status===status);
   $('tbody-folgas').innerHTML=items.length?items.map(f=>{
-    const op=f.status==='PLANEJADA'?`<button class="btn tiny primary folga-status" data-id="${esc(f.id)}" data-status="CONCEDIDA">Concedida</button><button class="btn tiny subtle folga-status" data-id="${esc(f.id)}" data-status="CANCELADA">Cancelar</button>`:'—';
-    return `<tr><td><strong>${esc(f.funcionario)}</strong><small class="block">${esc(f.empresa||'')}</small></td><td>${fmtData(f.dataFolga)}</td><td class="mono">${esc(f.horasPlanejadas)}</td><td><span class="status ${esc(f.status.toLowerCase())}">${esc(f.status)}</span></td><td>${esc(f.responsavel)}</td><td><div class="cell-actions">${op}</div></td></tr>`;
-  }).join(''):'<tr><td colspan="6" class="empty">Nenhuma folga registrada neste filtro.</td></tr>';
+    const op=f.status==='PLANEJADA'?`<button type="button" class="btn tiny primary folga-status" data-id="${esc(f.id)}" data-status="CONCEDIDA">Concedida</button><button type="button" class="btn tiny subtle folga-status" data-id="${esc(f.id)}" data-status="CANCELADA">Cancelar</button>`:'<span class="tm-folga-concluida">—</span>';
+    const observacao=String(f.observacoes||'').trim();
+    return `<tr class="tm-folga-linha">
+      <td class="tm-folga-pessoa"><strong>${esc(f.funcionario)}</strong><small class="block">${esc(f.empresa||'—')}</small></td>
+      <td><span class="tm-folga-destaque tm-folga-data mono">${esc(formatarDataHistoricoFolga(f.dataFolga))}</span></td>
+      <td><span class="tm-folga-destaque tm-folga-horas mono">${esc(formatarHorasHistoricoFolga(f.horasPlanejadas))}</span></td>
+      <td><span class="status ${esc(String(f.status||'').toLowerCase())}">${esc(f.status)}</span></td>
+      <td><span class="tm-folga-destaque tm-folga-responsavel">${esc(f.responsavel||'—')}</span></td>
+      <td><div class="tm-folga-observacao${observacao?'':' tm-folga-sem-observacao'}">${observacao?esc(observacao):'—'}</div></td>
+      <td class="tm-folga-acoes"><div class="cell-actions tm-folga-botoes">${op}</div></td>
+    </tr>`;
+  }).join(''):'<tr><td colspan="7" class="empty">Nenhuma folga registrada neste filtro.</td></tr>';
 }
 async function mudarStatusFolga(id,status) {
   try{
@@ -991,8 +1120,8 @@ function definirModoCarta(c=null) {
   $('btn-cancelar-edicao-carta').hidden=!c;
   $('form-carta').reset();
   $('carta-funcionario').value=c?.funcionario||'';
-  $('carta-ocorrencia').value=c?.dataOcorrencia||ontem();
-  $('carta-correcao').value=c?c.dataCorrecao||'':today();
+  $('carta-ocorrencia').value=dataISOParaCampo(c?.dataOcorrencia||ontem());
+  $('carta-correcao').value=dataISOParaCampo(c?c.dataCorrecao||'':today());
   $('carta-responsavel').value=c?.responsavel||'';
   $('carta-assinado').value=c?.status||'NÃO';
   $('carta-obs').value=c?textoComplementarCarta(c):'';
@@ -1106,8 +1235,8 @@ async function salvarCarta(e) {
     const empresa=ident.empresa||(mesmoNome?anterior.empresa:'');
     if(ident.erro)throw Error(ident.erro);
     const dados={funcionario:ident.nome||nome,empresa,
-      dataOcorrencia:$('carta-ocorrencia').value,responsavel:$('carta-responsavel').value.trim(),
-      dataCorrecao:$('carta-correcao').value,assinado:$('carta-assinado').value,
+      dataOcorrencia:dataParaISO($('carta-ocorrencia').value),responsavel:$('carta-responsavel').value.trim(),
+      dataCorrecao:dataParaISO($('carta-correcao').value),assinado:$('carta-assinado').value,
       observacoes:$('carta-obs').value.trim()};
     if(!dados.dataOcorrencia)throw Error('Informe a data da ocorrência.');
     const editando=APP.cartaEditando;
@@ -1128,7 +1257,7 @@ async function salvarCarta(e) {
     const dataOcorrencia=dados.dataOcorrencia,dataCorrecao=dados.dataCorrecao;
     definirModoCarta();
     // Facilita inserir várias cartas do mesmo dia, como no Excel.
-    $('carta-ocorrencia').value=dataOcorrencia;$('carta-correcao').value=dataCorrecao;
+    $('carta-ocorrencia').value=dataISOParaCampo(dataOcorrencia);$('carta-correcao').value=dataISOParaCampo(dataCorrecao);
     $('carta-funcionario').focus({preventScroll:true});
     renderFilaCartas();renderCartas();agendarEnvioCartas();
     return true;
@@ -1530,10 +1659,15 @@ function construirImagemResumo(tipo) {
   const ehBanco=tipo==='banco',periodo=obterPeriodoResumo();
   if(ehBanco&&!periodo.valido)throw Error(periodo.alerta);
   const linhas=ehBanco?resumoBancoLinhas(periodo):[];
-  const grupos=ehBanco?agruparResumoParaImagem(linhas):[];
+  // No PNG do grupo, ocultar SOMENTE linhas com saldo mensal incompleto.
+  // Ex.: Wagner: NOV sem leitura; não existe cálculo confiável dos dias de folga.
+  // A tabela do site continua exibindo essas pessoas como SEM DADOS para conferência.
+  // Nunca substituir um mês desconhecido por 00:00 ou dias de folga por zero.
+  const linhasImagem=ehBanco?linhas.filter(r=>r.dias!==null):[];
+  const grupos=ehBanco?agruparResumoParaImagem(linhasImagem):[];
   // Para a imagem continuar legível, o ranking tem o MESMO top 15 da tabela e do gráfico.
-  const lista=ehBanco?linhas:rankingParaCompartilhar();
-  if(!lista.length)throw Error('Não há registros para compartilhar.');
+  const lista=ehBanco?linhasImagem:rankingParaCompartilhar();
+  if(!lista.length)throw Error(ehBanco?'Não há funcionários com os três saldos válidos para compartilhar. Confira a sincronização.':'Não há registros para compartilhar.');
   const canvas=document.createElement('canvas');
   const ctx=canvas.getContext('2d');
   if(!ctx)throw Error('Seu navegador não oferece suporte à geração de imagens.');
@@ -1554,9 +1688,12 @@ function construirImagemResumo(tipo) {
     const margem=16,topo=16,scale=2;
     const widths=[390,124,124,124,104];
     const colTotal=widths.reduce((a,b)=>a+b,0);
-    const headerH=46,cabH=50,grupoH=26,rowH=31,footerH=50;
+    const headerH=46,cabH=50,grupoH=26,rowH=31;
     const totalRows=grupos.reduce((s,g)=>s+g.linhas.length,0);
-    const h=topo+headerH+cabH+grupos.length*grupoH+totalRows*rowH+footerH+18;
+    // A imagem termina junto da tabela: sem legendas nem faixa branca de rodapé.
+    // Contar também os espaçamentos de 10px entre os grupos para não cortar linhas.
+    const separadores=Math.max(0,grupos.length-1)*10;
+    const h=topo+headerH+cabH+grupos.length*grupoH+totalRows*rowH+separadores+margem;
     const logicalW=margem*2+colTotal, logicalH=h;
     canvas.width=logicalW*scale;canvas.height=logicalH*scale;
     canvas.style.width=logicalW+'px';canvas.style.height=logicalH+'px';
@@ -1615,9 +1752,6 @@ function construirImagemResumo(tipo) {
       }
       if(grupo!==grupos[grupos.length-1]){ctx.fillStyle='#f6f6f6';ctx.fillRect(x0,y,colTotal,10);y+=10;}
     }
-    const footerY=y+18;
-    ctx.fillStyle='#555';ctx.font='10px Arial';ctx.textAlign='left';
-    ctx.fillText('Destaque amarelo = funcionário com folga livre. Valores exibem os 3 meses sincronizados.',x0,footerY);
     return canvas;
   }
   const W=1500, margem=52,inicioY=230,rowH=60,cabH=48,h=Math.max(530,inicioY+cabH+rowH*lista.length+160);
@@ -1764,6 +1898,46 @@ function configurarSugestaoCarta(idInput,idLista,obterValores,aposSelecionar=()=
   });
   campo.addEventListener('blur',()=>{setTimeout(()=>{if(document.activeElement!==campo)fechar();},0);});
 }
+function prepararMascaraHora(input,padrao='07:20') {
+  if(!input)return;
+  const formatar=valor=>{
+    const digitos=String(valor??'').replace(/\D/g,'').slice(0,4);
+    if(!digitos)return '';
+    if(digitos.length<=2)return digitos;
+    return digitos.slice(0,digitos.length-2)+':'+digitos.slice(-2);
+  };
+  const normalizar=valor=>{
+    const texto=formatar(valor);
+    if(!texto)return padrao;
+    if(!texto.includes(':'))return `${texto.padStart(2,'0')}:00`;
+    let [h,m]=texto.split(':');
+    h=h.padStart(2,'0').slice(-2);
+    m=(m||'').padEnd(2,'0').slice(0,2);
+    const min=Math.min(59,Math.max(0,Number(m)||0));
+    return `${h}:${String(min).padStart(2,'0')}`;
+  };
+  input.setAttribute('inputmode','numeric');
+  input.setAttribute('placeholder',padrao);
+  input.addEventListener('input',()=>{
+    const anterior=input.selectionStart||input.value.length;
+    const tamanhoAnterior=input.value.length;
+    input.value=formatar(input.value);
+    const ajuste=input.value.length-tamanhoAnterior;
+    const pos=Math.max(0,anterior+ajuste);
+    try{input.setSelectionRange(pos,pos);}catch(_){ }
+  });
+  input.addEventListener('blur',()=>{input.value=normalizar(input.value);});
+  input.addEventListener('focus',()=>{if(!input.value.trim())input.value=padrao;});
+}
+function prepararCamposFormularioFolga() {
+  const horas=$('folga-horas'),obs=$('folga-obs');
+  if(horas){
+    horas.value=horas.value.trim()||'07:20';
+    horas.setAttribute('placeholder','07:20');
+  }
+  if(obs)obs.setAttribute('placeholder','Banco de Horas');
+}
+
 function configurarEnterEntreCamposCarta(idFormulario='form-carta',idBotao='btn-salvar-carta') {
   const form=$(idFormulario);
   // Enter em texto/select/data avança, somente o clique em Salvar (ou foco nele + Enter) grava.
@@ -1844,8 +2018,10 @@ function registrarEventos() {
   $('btn-recarregar-pendentes').addEventListener('click',()=>comBotaoCarregando($('btn-recarregar-pendentes'),carregarPendentes,'Atualizando pendentes…','Cartas pendentes atualizadas.'));
   document.addEventListener('click',onClickDelegado);
   configurarSugestaoFolga();
+  prepararCamposFormularioFolga();
+  prepararMascaraHora($('folga-horas'),'07:20');
   configurarEnterEntreCamposCarta('form-folga','salvar-folga');
-  ['folga-data'].forEach(id=>{const input=$(id);input.addEventListener('change',()=>normalizarAnoDaData(input));input.addEventListener('blur',()=>normalizarAnoDaData(input));});
+  configurarCampoDataBR('folga-data');
   $('carta-funcionario').addEventListener('input',atualizarEmpresaCarta);
   $('carta-funcionario').addEventListener('change',atualizarEmpresaCarta);
   configurarSugestaoCarta('carta-funcionario','carta-sugestoes-funcionario',()=>[
@@ -1858,7 +2034,7 @@ function registrarEventos() {
   });
   configurarEnterEntreCamposCarta();
   $('btn-cancelar-edicao-carta').addEventListener('click',()=>definirModoCarta());
-  ['carta-ocorrencia','carta-correcao'].forEach(id=>{const input=$(id);input.addEventListener('change',()=>normalizarAnoDaData(input));input.addEventListener('blur',()=>normalizarAnoDaData(input));});
+  ['carta-ocorrencia','carta-correcao'].forEach(configurarCampoDataBR);
 }
 document.addEventListener('DOMContentLoaded',()=>{
   prepararFilaCartas();
