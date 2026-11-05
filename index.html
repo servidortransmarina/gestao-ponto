@@ -167,15 +167,15 @@
               </div>
               <input id="folga-empresa" type="hidden">
               <p class="wide carta-empresa-identificada carta-empresa-aviso" id="folga-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
-              <label>Data da folga <input id="folga-data" type="date" required></label>
-              <label>Horas previstas <input id="folga-horas" type="text" value="08:00" pattern="[0-9]{1,2}:[0-5][0-9]" required placeholder="08:00"></label>
+              <label>Data da folga <input id="folga-data" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA" required></label>
+              <label>Horas previstas <input id="folga-horas" type="text" value="07:20" pattern="[0-9]{1,2}:[0-5][0-9]" required placeholder="07:20" inputmode="numeric"></label>
               <small class="wide carta-dica-data">A data pode ser alterada. Se o ano for digitado como 26, será ajustado para 2026.</small>
-              <label class="wide">Justificativa / observações <textarea id="folga-obs" rows="3" maxlength="500" placeholder="Ex.: compensação sujeita à confirmação do RH"></textarea></label>
+              <label class="wide">Justificativa / observações <textarea id="folga-obs" rows="3" maxlength="500" placeholder="Banco de Horas"></textarea></label>
               <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="salvar-folga">Registrar planejamento</button></div>
             </form></div>
             <div class="panel"><h3>Critérios para avaliação</h3><div class="info-row"><span>01</span><div><b>Conferir o banco de horas compensável</b><p>Horas extras do mês não provam um saldo disponível para folga.</p></div></div><div class="info-row"><span>02</span><div><b>Verificar a escala</b><p>Planeje a folga sem comprometer a cobertura do setor.</p></div></div><div class="info-row"><span>03</span><div><b>Validar a compensação</b><p>Alinhe com RH e política da empresa antes de marcar como concedida.</p></div></div></div>
           </div>
-          <div class="panel"><div class="panel-top"><h3>Histórico de decisões</h3><select id="filtro-folga-status"><option value="">Todos os status</option><option value="PLANEJADA">Planejadas</option><option value="CONCEDIDA">Concedidas</option><option value="CANCELADA">Canceladas</option></select></div><div class="table-scroll"><table><thead><tr><th>Colaborador</th><th>Data</th><th>Horas</th><th>Status</th><th>Responsável</th><th>Ações</th></tr></thead><tbody id="tbody-folgas"></tbody></table></div></div>
+          <div class="panel tm-folgas-historico"><div class="panel-top"><h3>Histórico de decisões</h3><select id="filtro-folga-status"><option value="">Todos os status</option><option value="PLANEJADA">Planejadas</option><option value="CONCEDIDA">Concedidas</option><option value="CANCELADA">Canceladas</option></select></div><div class="table-scroll" role="region" aria-label="Histórico de decisões sobre folgas" tabindex="0"><table class="tm-tabela-folgas"><colgroup><col class="tm-col-folga-pessoa"><col class="tm-col-folga-data"><col class="tm-col-folga-horas"><col class="tm-col-folga-status"><col class="tm-col-folga-responsavel"><col class="tm-col-folga-obs"><col class="tm-col-folga-acoes"></colgroup><thead><tr><th>Colaborador</th><th>Data</th><th>Horas</th><th>Status</th><th>Responsável</th><th>Observação</th><th class="tm-folga-acoes-titulo">Ações</th></tr></thead><tbody id="tbody-folgas"></tbody></table></div></div>
         </section>
 
         <section id="sec-cartas" class="page">
@@ -190,8 +190,8 @@
                   <div class="carta-autocomplete-relativo"><input id="carta-funcionario" autocomplete="off" required placeholder="Nome do colaborador" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-funcionario" aria-expanded="false"><div id="carta-sugestoes-funcionario" class="carta-sugestoes" role="listbox" hidden></div></div>
                 </div>
                 <p class="wide carta-empresa-identificada" id="carta-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
-                <label>Data da ocorrência <input id="carta-ocorrencia" type="date" required></label>
-                <label>Data de conferência / correção <input id="carta-correcao" type="date"></label>
+                <label>Data da ocorrência <input id="carta-ocorrencia" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA" required></label>
+                <label>Data de conferência / correção <input id="carta-correcao" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA"></label>
                 <small class="wide carta-dica-data">Os campos de data podem ser alterados. Se o ano for digitado como 26, será ajustado para 2026.</small>
                 <div class="carta-campo-autocomplete">
                   <label for="carta-responsavel">Entregue ao responsável</label>
@@ -268,6 +268,6 @@
       </main>
     </div>
   </div>
-  <script src="ponto.js"></script>
+  <script src="ponto.js?v=30.21"></script>
 </body>
 </html>
