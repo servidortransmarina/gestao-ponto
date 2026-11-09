@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
   <title>Gestão de Ponto | Transmarina</title>
-  <link rel="stylesheet" href="ponto.css?v=31.0">
+  <link rel="stylesheet" href="ponto.css?v=31.5">
 </head>
 <body>
   <div class="modal-overlay" id="modal-login" aria-modal="true" role="dialog">
@@ -180,8 +180,7 @@
         </section>
 
         <section id="sec-cartas" class="page">
-          <div class="section-header"><div><h2>Cartas de ponto</h2><p>Controle de entrega, correção e assinatura inspirado no arquivo Excel.</p></div></div>
-          <nav class="subnav" aria-label="Subabas de cartas de ponto"><button class="subnav-btn active" data-sub="controle">Controle de cartas</button><button class="subnav-btn" data-sub="capa">Capa e impressão</button><button class="subnav-btn" data-sub="relatorios">Ranking e gráficos</button><button class="subnav-btn" data-sub="resumo">Resumo para o grupo</button></nav>
+          <nav class="subnav" aria-label="Subabas de cartas de ponto"><button class="subnav-btn active" data-sub="controle">Controle de cartas</button><button class="subnav-btn" data-sub="capa">Capa e impressão</button><button class="subnav-btn" data-sub="relatorios">Ranking e gráficos</button><button class="subnav-btn" data-sub="resumo">Resumo para o grupo</button><button class="subnav-btn" data-sub="banco">Banco de Horas</button></nav>
 
           <div class="subpage active" id="sub-controle">
             <div class="two-columns">
@@ -246,7 +245,38 @@
               <p class="footnote"><b>*Dias equivalentes (regra do Excel):</b> some os saldos dos três meses sincronizados; arredonde os minutos do total para horas inteiras (30 minutos ou mais arredondam a hora para cima); divida pela jornada de 07:20, exceto os três funcionários cadastrados com jornada 08:48; depois arredonde a fração de dia (0,5 ou mais sobe). Saldos negativos ou nulos resultam em 0 dia disponível; se faltar algum mês, exibimos um traço, nunca zero inventado. A equivalência em dias é apenas uma simulação, sujeita à conferência e aprovação. <b>Atenção:</b> o período de 01 até ontem é uma referência visual do mês mais recente; os valores são os saldos mensais da última sincronização, sem recorte diário. Compensações e prescrições serão configuradas em outra etapa.</p>
             </div>
           </div>
+          <div class="subpage" id="sub-banco">
+            <div class="section-header">
+              <div><h3>Banco de Horas</h3><p>Consulte o demonstrativo mensal dos funcionários ativos e ex-funcionários arquivados, no formato do MobPonto, sem alterar o ponto ou seus saldos.</p></div>
+            </div>
+            <div class="panel eb-filtros">
+              <div class="eb-filtros-linha">
+                <label>Empresa<select id="eb-empresa"><option value="">Todas as empresas</option></select></label>
+                <label>Ano inicial<input id="eb-ano-inicial" type="number" min="2000" max="2100" step="1" aria-label="Ano inicial do extrato"></label>
+                <label>Ano final<input id="eb-ano-final" type="number" min="2000" max="2100" step="1" aria-label="Ano final do extrato"></label>
+              </div>
+              <div class="eb-selecao-cabecalho">
+                <div><strong>Selecionar funcionários</strong><small>Escolha 1, vários ou todos os funcionários da empresa selecionada.</small></div>
+                <span id="eb-contador" aria-live="polite">0 selecionados</span>
+              </div>
+              <div class="eb-controles">
+                <input id="eb-busca" type="search" placeholder="Buscar funcionário..." aria-label="Buscar funcionário">
+                <button class="btn subtle" type="button" id="eb-selecionar-todos">Selecionar todos</button>
+                <button class="btn subtle" type="button" id="eb-limpar">Limpar seleção</button>
+              </div>
+              <div id="eb-lista" class="eb-lista" role="group" aria-label="Funcionários disponíveis"><p class="empty">Carregando funcionários...</p></div>
+              <div class="eb-acoes">
+                <button id="eb-carregar" class="btn primary" type="button">Carregar bancos de horas</button>
+                <button id="eb-csv" class="btn secondary" type="button" disabled>Exportar CSV</button>
+                <button id="eb-imprimir" class="btn secondary" type="button" disabled>Imprimir / PDF</button>
+              </div>
+              <p class="footnote">A consulta utiliza os dados registrados nas leituras do MobPonto e a sincronização mais recente. Não faz abatimentos ou pagamentos. Os meses sem leitura aparecerão como <b>SEM DADOS</b>. Selecione até 6 anos consecutivos; a consulta não inicia uma nova captura do MobPonto.</p>
+            </div>
+            <div id="eb-estado" class="eb-estado" role="status" aria-live="polite">Selecione os funcionários e clique em Carregar bancos de horas.</div>
+            <div id="eb-resultados" class="eb-resultados" aria-live="polite"></div>
+          </div>
         </section>
+
 
         <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Controle de cartas do encarregado</h2><p>Marque as assinaturas recebidas ou solicite reimpressão. As ações são registradas separadamente e não alteram o histórico do administrador.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div>
           <div class="panel"><div class="tm-pendentes-filtros"><label for="filtro-controle-enc">Exibir cartas</label><select id="filtro-controle-enc"><option value="PENDENTE">Ainda pendentes / reimpressão</option><option value="ASSINADA">Assinadas</option><option value="TODAS">Todas</option></select></div><div id="lista-pendentes" class="pending-list"></div></div></section>
@@ -276,6 +306,6 @@
       </main>
     </div>
   </div>
-  <script src="ponto.js?v=31.0"></script>
+  <script src="ponto.js?v=31.6"></script>
 </body>
 </html>
