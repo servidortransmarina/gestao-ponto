@@ -1753,3 +1753,94 @@ img,svg,canvas {max-width:100%;}
   main {padding-bottom:70px;}
 }
 
+/* V31.3 — Banco de horas: conciliação e relatórios (sem alterar os cartões antigos). */
+#sub-banco .bh-alerta {margin:0 0 18px; padding:12px 15px; border-radius:9px; border:1px solid #cbdcf0; background:#f2f7fd; color:#29445f; font-size:13px; line-height:1.5;}
+#sub-banco .bh-alerta-aviso {background:#fff4e3; border-color:#f2c582; color:#704618;}
+#sub-banco .bh-alerta[hidden] {display:none;}
+#sub-banco .bh-duas-colunas {display:grid;grid-template-columns:minmax(320px,0.95fr) minmax(0,1.35fr);align-items:start;gap:18px;margin-bottom:18px;}
+#sub-banco .bh-duas-colunas>.panel {min-width:0;}
+#sub-banco .bh-formulario {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;}
+#sub-banco .bh-formulario label,#sub-banco .bh-relatorio-campos label{display:flex;flex-direction:column;gap:6px;color:#354d64;font-size:13px;font-weight:650;min-width:0;}
+#sub-banco .bh-formulario input,#sub-banco .bh-formulario select,#sub-banco .bh-formulario textarea,
+#sub-banco .bh-relatorio-campos input,#sub-banco .bh-relatorio-campos select {width:100%;padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px;background:#fff;color:#24344c;font:inherit;box-sizing:border-box;min-width:0;}
+#sub-banco .bh-formulario .bh-campo-largo{grid-column:1/-1;}
+#sub-banco .bh-vinculo {display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #b6cdeb;border-radius:8px;padding:8px 10px;background:#eef5ff;color:#235077;font-size:12px;}
+#sub-banco .bh-vinculo[hidden]{display:none;}
+#sub-banco .bh-form-acoes {display:flex;justify-content:flex-end;}
+#sub-banco .bh-form-acoes .btn{max-width:260px;}
+#sub-banco .bh-relatorio-campos {display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
+#sub-banco .bh-relatorio-campos label{flex:1 1 180px;}
+#sub-banco .bh-relatorio-campos .btn{min-height:42px;}
+#sub-banco .bh-tabela{min-width:700px;}
+#sub-banco .bh-tabela td{vertical-align:top;font-size:12px;line-height:1.5;}
+#sub-banco .bh-tabela th{font-size:12px;}
+#sub-banco .bh-valor{font-weight:750;white-space:nowrap;}
+#sub-banco .bh-pessoa{font-weight:700;}
+#sub-banco .bh-muted{display:block;color:#72849b;font-size:11px;}
+#sub-banco .bh-tag{display:inline-block;padding:3px 7px;border-radius:5px;font-weight:750;font-size:10px;letter-spacing:.2px;color:#36536c;background:#e8eff7;white-space:normal;}
+#sub-banco .bh-tag.pendente{background:#fff0d6;color:#8b5c16;}
+#sub-banco .bh-tag.confirmado{background:#e4f4e8;color:#2a7543;}
+#sub-banco .bh-tag.estornado{background:#f8e4e4;color:#913c3c;}
+#sub-banco .bh-acao{border:1px solid #c5d6eb;background:#f6faff;border-radius:6px;padding:6px 9px;cursor:pointer;color:#16569c;font-weight:700;font-size:11px;}
+#sub-banco .bh-acao:hover{background:#e9f2ff;}
+@media(max-width:1050px){#sub-banco .bh-duas-colunas{grid-template-columns:1fr;}}
+@media(max-width:620px){#sub-banco .bh-formulario{grid-template-columns:1fr;}#sub-banco .bh-formulario .bh-campo-largo{grid-column:auto;}#sub-banco .bh-relatorio-campos .btn{flex:1 1 100%;}#sub-banco .bh-form-acoes .btn{max-width:none;width:100%;}}
+#bh-modal-estorno {border:0;border-radius:14px;padding:24px;max-width:460px;width:calc(100% - 30px);box-shadow:0 20px 70px #24354a55;color:#24354a;}
+#bh-modal-estorno::backdrop {background:#15243d88;}
+#bh-modal-estorno h3{margin:0 0 10px;}
+#bh-modal-estorno label{display:block;margin:15px 0 6px;font-weight:700;}
+#bh-modal-estorno textarea{width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #c7d4e5;padding:10px;resize:vertical;}
+#bh-modal-estorno .tm-exclusao-acoes{margin-top:17px;}
+
+#sub-banco [hidden] {display:none!important;}
+
+/* V31.4 — Captura por competência e arquivo completo do banco MobPonto */
+.bc-captura-painel{border-left:3px solid var(--blue)}
+.bc-captura-filtros{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:12px 0 16px}
+.bc-captura-filtros label{font-size:12px;font-weight:700;color:var(--navy);display:flex;flex-direction:column;gap:6px;flex:1 1 175px}
+.bc-captura-filtros input,.bc-captura-filtros select,.bc-captura-filtros textarea{min-width:0;width:100%}
+.bc-captura-filtros button{min-height:40px}
+.bc-progresso{border:1px solid #cbddea;background:#f7fbff;padding:11px 14px;border-radius:8px;font-size:12px;white-space:pre-wrap}
+.bc-historico-table{max-height:580px}
+.bc-historico-table td{vertical-align:top}
+.bc-anotacao{display:block;white-space:pre-wrap;min-width:210px;max-width:440px;word-break:break-word;font-size:11px;line-height:1.45}
+.bc-anotacao-ausente{color:#8b6d2c}
+.bc-anotacao-larga{flex:1 1 100%!important}
+@media(max-width:700px){.bc-captura-filtros{display:grid;grid-template-columns:minmax(0,1fr)}.bc-captura-filtros label{min-width:0}.bc-captura-filtros button{width:100%}}
+
+
+/* V31.5 — Extratos por funcionário, próximos ao demonstrativo MobPonto */
+#sub-banco .eb-filtros{border-top:3px solid var(--blue);}
+#sub-banco .eb-filtros-linha{display:grid;grid-template-columns:minmax(0,2fr) minmax(130px,1fr);gap:14px;max-width:720px;}
+#sub-banco .eb-filtros label{display:grid;gap:6px;font-weight:700;color:var(--navy);font-size:12px;}
+#sub-banco .eb-selecao-cabecalho{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin:18px 0 9px;align-items:center;}
+#sub-banco .eb-selecao-cabecalho strong{display:block;font-size:14px;color:var(--navy);}
+#sub-banco .eb-selecao-cabecalho small{display:block;color:var(--muted);font-size:11px;margin-top:3px;}
+#sub-banco #eb-contador{font-size:12px;font-weight:750;color:var(--blue);background:#edf4fa;padding:6px 11px;border-radius:18px;}
+#sub-banco .eb-controles{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:11px;}
+#sub-banco .eb-controles input{max-width:360px;flex:1 1 210px;}
+#sub-banco .eb-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:7px;padding:12px;border:1px solid var(--border);border-radius:10px;max-height:240px;overflow:auto;background:#f8fbff;}
+#sub-banco .eb-lista label{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;background:white;border:1px solid #e7edf4;cursor:pointer;font-size:12px;font-weight:550;min-width:0;}
+#sub-banco .eb-lista label:hover{border-color:#b8cee6;}
+#sub-banco .eb-lista input[type="checkbox"]{width:17px;min-width:17px;flex:0 0 17px;margin:0;}
+#sub-banco .eb-acoes{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:18px 0 6px;}
+#sub-banco .eb-estado{border:1px solid #cbdcea;border-radius:9px;padding:13px 16px;color:#36526e;background:#f5f9fd;margin-bottom:17px;font-size:12px;}
+#sub-banco .eb-extrato{background:#fff;border:1px solid #d9e3ec;border-radius:12px;padding:23px;margin-bottom:24px;box-shadow:var(--shadow);}
+#sub-banco .eb-extrato>header{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:13px;}
+#sub-banco .eb-kicker{font-size:10px;font-weight:800;letter-spacing:1px;color:var(--blue);}
+#sub-banco .eb-extrato h4{font-size:18px;margin:3px 0 4px;color:var(--navy);}
+#sub-banco .eb-extrato .eb-empresa{color:var(--muted);font-size:12px;}
+#sub-banco .eb-etiqueta{border-radius:13px;padding:5px 10px;background:#eef4fa;color:var(--blue);font-weight:700;font-size:11px;}
+#sub-banco .eb-tabela-wrap{overflow-x:auto;}
+#sub-banco .eb-tabela{min-width:780px;width:100%;border-collapse:separate;border-spacing:2px;font-variant-numeric:tabular-nums;}
+#sub-banco .eb-tabela th{position:static;white-space:normal;text-transform:none;letter-spacing:0;font-size:10px;background:#bfc4c9;color:#263b52;text-align:center;line-height:1.3;padding:8px 7px;border:0;}
+#sub-banco .eb-tabela td{font-size:11px;padding:8px 7px;text-align:center;color:#203349;border:0;background:#eef1f4;}
+#sub-banco .eb-tabela tbody tr:nth-child(even) td{background:#dfe3e7;}
+#sub-banco .eb-tabela td:first-child{text-align:left;white-space:nowrap;font-weight:700;}
+#sub-banco .eb-tabela td:last-child{text-align:left;min-width:160px;}
+#sub-banco .eb-tabela .eb-total td{background:#cfd8e4!important;font-weight:800;border-top:2px solid var(--blue);}
+#sub-banco .eb-tabela .eb-positivo{color:#167653;font-weight:750;}
+#sub-banco .eb-tabela .eb-negativo{color:#b83c3c;font-weight:750;}
+#sub-banco .eb-tabela .eb-sem-dados,#sub-banco .eb-anotacao-vazia{color:#7c8796;font-style:italic;}
+#sub-banco .eb-extrato .eb-nota{font-size:11px;color:var(--muted);margin:10px 0 0;line-height:1.6;}
+@media(max-width:650px){#sub-banco .eb-filtros-linha{grid-template-columns:1fr;}#sub-banco .eb-acoes button{flex:1 1 100%;}#sub-banco .eb-extrato{padding:14px;}#sub-banco .eb-extrato h4{font-size:15px;}}
