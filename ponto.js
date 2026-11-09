@@ -519,6 +519,7 @@ function escolherSubaba(sub) {
   if(sub==='capa')renderCapa();
   if(sub==='relatorios')renderRelatorios();
   if(sub==='resumo')renderResumoBanco();
+  if(sub==='banco')ebAoAbrir();
 }
 
 // Administração de contas — leitura e decisões sempre validadas no Apps Script.
@@ -2144,6 +2145,7 @@ function registrarEventos() {
   document.addEventListener('click',onClickDelegado);
   configurarSugestaoFolga();
   prepararCamposFormularioFolga();
+  configurarBancoHorasUI();
   prepararMascaraHora($('folga-horas'),'07:20');
   configurarEnterEntreCamposCarta('form-folga','salvar-folga');
   configurarCampoDataBR('folga-data');
@@ -2198,3 +2200,159 @@ window.addEventListener('beforeunload',e=>{
   if(!filaCartasDaConta().length)return;
   e.preventDefault();e.returnValue='';
 });
+
+
+
+// V31.6 — Extrato MobPonto por empresa, funcionários e intervalo multianual.
+// Nenhuma chamada desta tela grava movimentos no banco de horas ou no MobPonto.
+const EB={pessoas:[],selecionados:new Set(),extratos:[],anoAtual:new Date().getFullYear(),
+  carregandoOpcoes:false,opcoesCarregadas:false,pendente:false,resultado:null};
+const EB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function ebAtivosFiltrados(){
+  const empresa=$('eb-empresa').value,termo=norm($('eb-busca').value);
+  return EB.pessoas.filter(p=>(!empresa||p.empresa===empresa)&&(!termo||norm(p.nome).includes(termo)));
+}
+function ebAtualizarContagem(){
+  const visiveis=EB.pessoas.filter(p=>!$('eb-empresa').value||p.empresa===$('eb-empresa').value);
+  const n=visiveis.filter(p=>EB.selecionados.has(p.id)).length;
+  $('eb-contador').textContent=n+' selecionado(s) de '+visiveis.length;
+}
+function ebRenderLista(){
+  const pessoas=ebAtivosFiltrados(),box=$('eb-lista');box.replaceChildren();
+  if(!pessoas.length){const p=document.createElement('p');p.className='empty';p.textContent='Nenhum funcionário ativo corresponde ao filtro.';box.appendChild(p);}
+  pessoas.forEach(p=>{
+    const label=document.createElement('label'),input=document.createElement('input'),nome=document.createElement('span');
+    input.type='checkbox';input.value=p.id;input.checked=EB.selecionados.has(p.id);
+    input.setAttribute('aria-label','Selecionar '+p.nome+' — '+p.empresa);
+    input.addEventListener('change',()=>{if(input.checked)EB.selecionados.add(p.id);else EB.selecionados.delete(p.id);ebAtualizarContagem();ebLimparResultados();});
+    nome.textContent=p.nome+($('eb-empresa').value?'':' — '+p.empresa);
+    label.append(input,nome);box.appendChild(label);
+  });
+  ebAtualizarContagem();
+}
+function ebTrocarEmpresa(){
+  // Seleção é exclusiva da empresa escolhida, para impedir mistura acidental.
+  EB.selecionados.clear();ebRenderLista();ebLimparResultados();
+}
+function ebLimparResultados(){
+  EB.extratos=[];EB.resultado=null;$('eb-resultados').replaceChildren();
+  $('eb-csv').disabled=true;$('eb-imprimir').disabled=true;
+}
+async function ebCarregarOpcoes(){
+  if(EB.carregandoOpcoes)return;
+  EB.carregandoOpcoes=true;
+  try{
+    const r=await api('getOpcoesExtratoBanco');
+    EB.pessoas=r.dados.pessoas||[];EB.anoAtual=r.dados.anoAtual||EB.anoAtual;
+    for(const id of ['eb-ano-inicial','eb-ano-final']){
+      $(id).max=String(EB.anoAtual);
+      if(!$(id).value)$(id).value=String(EB.anoAtual);
+    }
+    const selecao=$('eb-empresa'),atual=selecao.value;
+    selecao.replaceChildren(new Option('Todas as empresas',''));
+    [...new Set(EB.pessoas.map(p=>p.empresa))].sort((a,b)=>a.localeCompare(b,'pt-BR'))
+      .forEach(e=>selecao.add(new Option(e,e)));
+    if([...selecao.options].some(o=>o.value===atual))selecao.value=atual;
+    EB.opcoesCarregadas=true;ebRenderLista();
+    $('eb-estado').textContent=EB.pessoas.length+' funcionário(s) no cadastro/histórico. Selecione os que deseja consultar.';
+  }catch(e){$('eb-estado').textContent='Erro ao carregar funcionários: '+e.message;throw e;}
+  finally{EB.carregandoOpcoes=false;}
+}
+function ebAoAbrir(){if(!EB.opcoesCarregadas)ebCarregarOpcoes().catch(()=>{});}
+function ebSelecionarTodos(){
+  // Seleciona TODOS da empresa, inclusive os que não aparecem no campo de busca.
+  const empresa=$('eb-empresa').value;
+  EB.pessoas.filter(p=>!empresa||p.empresa===empresa).forEach(p=>EB.selecionados.add(p.id));
+  ebRenderLista();ebLimparResultados();
+}
+function ebMinutos(v){const m=String(v||'').match(/^([+-]?)(\d{1,5}):([0-5]\d)$/);return m?(m[1]==='-'?-1:1)*(Number(m[2])*60+Number(m[3])):null;}
+function ebFormatarMinutos(n,sinal=false){if(!Number.isFinite(n))return '—';const z=Math.abs(n);return (n<0?'-':sinal&&n>0?'+':'')+String(Math.floor(z/60)).padStart(2,'0')+':'+String(z%60).padStart(2,'0');}
+function ebSomarCampo(meses,campo,sinal){
+  // Não apresentar como integral um total com competências faltantes.
+  const valores=meses.map(r=>ebMinutos(r[campo]));
+  if(valores.some(v=>v===null))return '—';
+  return ebFormatarMinutos(valores.reduce((a,b)=>a+b,0),sinal);
+}
+function ebClasseSaldo(s){return s.startsWith('-')?'eb-negativo':s.startsWith('+')?'eb-positivo':s==='SEM DADOS'?'eb-sem-dados':'';}
+function ebTabelaHTML(extrato){
+  const linhas=extrato.meses.map(r=>{
+    const mes=EB_MESES[Number(r.mes.slice(0,2))-1]+'/'+r.mes.slice(3);
+    const campos=['previsto','trabalhado','extra','extraFds','adn','saldo'];
+    return '<tr><td>'+esc(mes)+'</td>'+campos.map(c=>'<td class="'+ebClasseSaldo(r[c])+'">'+esc(r[c]||'SEM DADOS')+'</td>').join('')+
+      '<td class="'+(r.anotacao?'':'eb-anotacao-vazia')+'">'+esc(r.anotacao||'Não informada pela API')+'</td></tr>';
+  }).join('');
+  const soma=['previsto','trabalhado','extra','extraFds','adn','saldo'].map((c,i)=>'<td>'+esc(ebSomarCampo(extrato.meses,c,i>=2&&i!==4))+'</td>').join('');
+  const faltantes=extrato.meses.filter(r=>r.situacao==='SEM LEITURA').length;
+  const parciais=extrato.meses.some(r=>['previsto','trabalhado','extra','extraFds','adn','saldo'].some(k=>ebMinutos(r[k])===null));
+  return '<article class="eb-extrato"><header><div><span class="eb-kicker">TRANSMARINA / BANCO DE HORAS</span><h4>'+esc(extrato.nome)+
+    '</h4><span class="eb-empresa">'+esc(extrato.empresa)+'</span></div><span class="eb-etiqueta">Período '+
+    esc(extrato.anoInicial===extrato.anoFinal?String(extrato.anoInicial):extrato.anoInicial+'–'+extrato.anoFinal)+'</span></header>'+
+    '<div class="eb-tabela-wrap"><table class="eb-tabela"><thead><tr><th>Mês/Ano</th><th>Horas a trabalhar<br>no mês</th><th>Horas<br>trabalhadas</th><th>Extra<br>Seg–Sáb</th><th>Extra<br>Dom/Fer</th><th>Adicional<br>noturno</th><th>Saldo<br>banco</th><th>Anotação</th></tr></thead><tbody>'+linhas+
+    '<tr class="eb-total"><td>TOTAL'+(parciais?' (parcial)':'')+'</td>'+soma+'<td>—</td></tr></tbody></table></div><p class="eb-nota">'+
+    (faltantes?faltantes+' mês(es) sem leitura; os totais dependentes desses meses são omitidos. ':'')+
+    'Dados auxiliares extraídos das leituras da API, não substituem o demonstrativo oficial. O mês atual pode estar incompleto.</p></article>';
+}
+async function ebCarregar(){
+  const emp=$('eb-empresa').value;
+  const anoInicial=Number($('eb-ano-inicial').value),anoFinal=Number($('eb-ano-final').value);
+  if(!Number.isInteger(anoInicial)||!Number.isInteger(anoFinal)||
+      anoInicial<2000||anoFinal>EB.anoAtual||anoInicial>anoFinal)
+    throw Error('Selecione um intervalo válido: ano inicial até ano final, sem anos futuros.');
+  if(anoFinal-anoInicial>5)throw Error('Consulte até 6 anos consecutivos por vez.');
+  const ids=EB.pessoas.filter(p=>(!emp||p.empresa===emp)&&EB.selecionados.has(p.id)).map(p=>p.id);
+  if(!ids.length)throw Error('Selecione pelo menos um funcionário.');
+  $('eb-estado').textContent='Consultando '+ids.length+' funcionário(s)...';ebLimparResultados();
+  try{
+    const r=await api('getExtratosBanco',{empresa:emp,anoInicial,anoFinal,ids});EB.resultado=r.dados;EB.extratos=r.dados.extratos||[];
+    $('eb-resultados').innerHTML=EB.extratos.map(ebTabelaHTML).join('');
+    const mesesSem=EB.extratos.reduce((s,x)=>s+x.meses.filter(y=>y.situacao==='SEM LEITURA').length,0);
+    $('eb-estado').textContent=EB.extratos.length+' extrato(s) carregado(s) — '+
+      (anoInicial===anoFinal?anoInicial:anoInicial+'–'+anoFinal)+'. '+
+      (mesesSem?mesesSem+' competência(s) sem leitura. ':'')+
+      'As anotações aparecem somente quando retornadas pela API.';
+    $('eb-csv').disabled=!EB.extratos.length;$('eb-imprimir').disabled=!EB.extratos.length;
+  }catch(e){$('eb-estado').textContent='Não foi possível carregar: '+e.message;throw e;}
+  return true;
+}
+function ebCSV(){
+  if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
+  const colunas=['Empresa','Funcionário','Ano','Mês/Ano','Horas a trabalhar','Horas trabalhadas','Extra Seg-Sáb',
+    'Extra Dom/Fer','Adicional noturno','Saldo banco','Anotação','Situação','Fonte'];
+  const linhas=[colunas];
+  EB.extratos.forEach(e=>e.meses.forEach(r=>linhas.push([e.empresa,e.nome,r.mes.slice(3),r.mes,r.previsto,r.trabalhado,
+    r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Não informada pela API',r.situacao,r.origem])));
+  const txt='\ufeffsep=;\r\n'+linhas.map(r=>r.map(ebCSVSeguro).join(';')).join('\r\n');
+  const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
+    EB.resultado.anoInicial+'-'+EB.resultado.anoFinal;
+  const nome='Transmarina_Extratos_Banco_'+periodo+'.csv';
+  const blob=new Blob([txt],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=nome;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+function ebCSVSeguro(valor){
+  let s=String(valor??'');
+  if(/^[=+@\-\t\r]/.test(s))s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
+function ebImprimir(){
+  if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
+  const popup=window.open('','_blank');if(!popup)throw Error('Permita pop-ups para imprimir os extratos.');
+  const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
+    EB.resultado.anoInicial+'–'+EB.resultado.anoFinal;
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Banco de horas — '+esc(periodo)+'</title><style>'+
+    'body{font:12px Arial,sans-serif;color:#243547;margin:16px}article{page-break-after:always;margin-bottom:20px}header{display:flex;justify-content:space-between;align-items:center}h4{font-size:18px;margin:3px 0}span{font-size:11px}table{border-collapse:collapse;width:100%;font-size:10px;margin-top:10px}th,td{border:1px solid #bec8d2;padding:6px;text-align:center}th{background:#c2cbd5}td:first-child,td:last-child{text-align:left}tr:nth-child(even) td{background:#edf0f4}.eb-total td{background:#d7e1ef!important;font-weight:bold}.eb-nota{font-size:10px;color:#687991}.eb-etiqueta{font-weight:bold}@page{size:A4 landscape;margin:12mm}</style></head><body>'+EB.extratos.map(ebTabelaHTML).join('')+'</body></html>';
+  popup.document.open();popup.document.write(html);popup.document.close();popup.focus();
+  setTimeout(()=>popup.print(),400);
+}
+function configurarBancoHorasUI(){
+  for(const id of ['eb-ano-inicial','eb-ano-final']){
+    $(id).value=String(id==='eb-ano-inicial'?Math.max(2022,EB.anoAtual-5):EB.anoAtual);
+    $(id).addEventListener('change',ebLimparResultados);
+  }
+  $('eb-empresa').addEventListener('change',ebTrocarEmpresa);
+  $('eb-busca').addEventListener('input',ebRenderLista);
+  $('eb-selecionar-todos').addEventListener('click',ebSelecionarTodos);
+  $('eb-limpar').addEventListener('click',()=>{EB.selecionados.clear();ebRenderLista();ebLimparResultados();});
+  $('eb-carregar').addEventListener('click',()=>comBotaoCarregando($('eb-carregar'),ebCarregar,'Carregando extratos...'));
+  $('eb-csv').addEventListener('click',()=>{try{ebCSV();}catch(e){showMessage(e.message,'Exportação',true);}});
+  $('eb-imprimir').addEventListener('click',()=>{try{ebImprimir();}catch(e){showMessage(e.message,'Impressão',true);}});
+}
