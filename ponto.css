@@ -1863,3 +1863,101 @@ img,svg,canvas {max-width:100%;}
 #sub-banco .eb-tabela th:nth-child(7),#sub-banco .eb-tabela td:nth-child(7){width:10%;}
 #sub-banco .eb-tabela th:nth-child(8),#sub-banco .eb-tabela td:nth-child(8){width:20%;}
 #sub-banco .eb-tabela th,#sub-banco .eb-tabela td{overflow-wrap:break-word;}
+
+
+/* V31.12 — busca, ordenação e responsividade das cartas pendentes */
+.tm-pendentes-filtros-v2 {
+  display:grid;
+  grid-template-columns:minmax(230px,1.45fr) minmax(190px,1fr) minmax(210px,1fr);
+  align-items:end;
+  gap:12px;
+  margin-bottom:8px;
+}
+.tm-pendente-campo {display:flex;flex-direction:column;gap:6px;min-width:0;}
+.tm-pendentes-filtros-v2 .tm-pendente-campo label {
+  font-size:12px;font-weight:800;color:#4f6378;
+}
+.tm-pendentes-filtros-v2 input,
+.tm-pendentes-filtros-v2 select {
+  width:100%;max-width:none;min-width:0;min-height:45px;
+  border:1px solid #cddce9;border-radius:9px;background:#fff;
+  color:var(--text);padding:10px 12px;font-size:14px;
+}
+.tm-pendente-busca-caixa {position:relative;min-width:0;}
+.tm-pendente-busca-caixa svg {
+  width:18px;height:18px;position:absolute;left:13px;top:50%;transform:translateY(-50%);
+  color:#607c94;pointer-events:none;
+}
+.tm-pendente-busca-caixa input {padding-left:41px;padding-right:12px;}
+.tm-pendentes-filtros-v2 input:focus-visible,
+.tm-pendentes-filtros-v2 select:focus-visible {outline:2px solid #7aaad5;outline-offset:1px;}
+.tm-pendentes-contador {font-size:12px;color:#64778b;margin:0 0 10px;font-weight:650;}
+.tm-carta-encarregado {min-width:0;}
+.tm-pendente-info h4 {overflow-wrap:anywhere;}
+.tm-pendente-status[hidden] {display:none!important;}
+@media (max-width:1050px) {
+  .tm-pendentes-filtros-v2 {grid-template-columns:repeat(2,minmax(0,1fr));}
+  .tm-pendente-busca {grid-column:1/-1;}
+}
+@media (max-width:780px) {
+  html,body {max-width:100%;overflow-x:clip;}
+  .content,.page,.subpage,.panel,.section-header,.pending-list {min-width:0;}
+  .tm-pendentes-filtros-v2 {grid-template-columns:minmax(0,1fr);gap:11px;}
+  .tm-pendente-busca {grid-column:auto;}
+  .tm-pendentes-filtros-v2 .tm-pendente-campo {width:100%;}
+  /* iOS/Chrome: focar campos abaixo de 16px pode ampliar a janela automaticamente.
+     A regra específica cobre campos com fontes herdadas (inclusive Banco de Horas). */
+  input:not([type=checkbox]):not([type=radio]),select,textarea,
+  .tm-pendentes-filtros-v2 input,.tm-pendentes-filtros-v2 select,
+  #sub-banco .bh-formulario input,#sub-banco .bh-formulario select,
+  #sub-banco .bh-formulario textarea,
+  #sub-banco .bh-relatorio-campos input,#sub-banco .bh-relatorio-campos select {
+    font-size:16px!important;
+  }
+  /* Permite movimento e pinch-zoom, mas reduz zoom acidental por duplo toque. */
+  button,.btn,input,select,textarea,.nav-button,.subnav-btn,.tm-carta-encarregado {
+    touch-action:manipulation;
+  }
+  .tm-carta-encarregado {padding:15px 0;gap:12px;align-items:stretch;}
+  .tm-pendente-info {width:100%;}
+  .tm-pendente-acoes {flex-direction:column;align-items:stretch;}
+  .tm-pendente-acoes .btn {width:100%;min-height:46px;}
+}
+@media (max-width:430px) {
+  .tm-pendentes-filtros-v2 {gap:10px;}
+  .tm-pendente-busca-caixa input {width:100%;}
+  .tm-carta-encarregado h4 {font-size:15px;}
+}
+
+/* V31.12.1 — confirmação e atribuição sem criar botões espremidos no celular. */
+.carta-acoes .carta-assinar-atribuir,
+.tm-pendente-acoes .carta-assinar-atribuir {
+  background:#e5f3ec;color:#166345;border:1px solid #b7ddc9;
+  white-space:normal;overflow-wrap:anywhere;text-align:center;
+}
+.carta-acoes .carta-assinar-atribuir:hover,
+.tm-pendente-acoes .carta-assinar-atribuir:hover {background:#d1eadd;}
+.carta-acoes .carta-assinar-atribuir {max-width:190px;}
+@media(max-width:780px) {
+  .carta-acoes .carta-assinar-atribuir {max-width:none;width:100%;min-height:44px;}
+  .tm-pendente-acoes .carta-assinar-atribuir {width:100%;min-height:46px;}
+  /* Botões em coluna não podem quebrar numa segunda coluna horizontal. */
+  .tm-pendente-acoes {flex-wrap:nowrap;}
+  .tm-pendente-acoes .btn {flex:0 0 auto;}
+}
+
+/* V31.12.2 — Confirmar ao lado do status Assinada (somente ADM). */
+.tm-avisos-colunas,.tm-aviso-carta {
+  grid-template-columns:minmax(0,1.4fr) minmax(0,.8fr) minmax(158px,1fr);
+}
+.tm-aviso-acao {flex-direction:row;flex-wrap:wrap;align-items:center;gap:7px;}
+.tm-aviso-acao .tm-aviso-confirmar-assinatura {
+  width:auto;flex:0 0 auto;
+  min-height:34px;padding:7px 11px;white-space:nowrap;font-weight:800;
+}
+@media(max-width:620px) {
+  .tm-avisos-colunas {display:none;}
+  .tm-aviso-carta {grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:10px;}
+  .tm-aviso-acao {grid-column:1/-1;justify-content:flex-start;}
+  .tm-aviso-acao .tm-aviso-confirmar-assinatura {width:auto;min-height:40px;}
+}
