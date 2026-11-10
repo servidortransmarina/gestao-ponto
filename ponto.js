@@ -1,7 +1,7 @@
 /* FRONTEND — GitHub Pages. Atualize esta URL após uma NOVA implantação do Apps Script. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwUH3n8zl4g_kgxvfSxmXW0qZQ4pi_SuZ-EOM0B86KkM23kSca4n41PZyC-ABhkj3zI/exec';
 const STORAGE_KEY = 'transmarina_gestao_sessao_v2';
-const APP = {sessao:null, cartas:[], pendentes:[], acoesCartas:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
+const APP = {sessao:null, cartas:[], pendentes:[], acoesCartas:[], assinaturasResponsaveis:[], saldos:[], funcionarios:[], folgas:[], selecionadas:new Set(), aba:'horas', subaba:'controle', cartaEditando:null, usuarios:{pendentes:[],ativos:[],recusados:[]}};
 const $ = id => document.getElementById(id);
 const norm = x => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
 // (FALTA) identifica o tipo da carta, mas a busca de empresa e responsável
@@ -515,7 +515,7 @@ async function iniciarPainel() {
   $('data-hoje').textContent=fmtDia();
   escolherAba('horas');
   const operacoes=[carregarSaldos(),carregarFolgas()];
-  if(adm){retomarSincronizacao();operacoes.push(carregarCartas(),carregarAcoesCartas(),carregarFuncionarios(),carregarUsuarios());}
+  if(adm){retomarSincronizacao();operacoes.push(carregarCartas(),carregarAcoesCartas(),carregarAssinaturasResponsaveis(),carregarFuncionarios(),carregarUsuarios());}
   else operacoes.push(carregarPendentes());
   await Promise.allSettled(operacoes);
   if(adm)reativarFilaDeCartas();
@@ -527,6 +527,8 @@ function escolherAba(tab) {
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='sec-'+tab));
   $('titulo-pagina').textContent=mensagens[tab]||'Gestão de ponto';
   if(tab==='cartas')escolherSubaba(APP.subaba);
+  // Tela própria: atualiza só pendências em vez do histórico de todas as cartas.
+  if(tab==='pendentes'&&APP.sessao?.perfil==='ADM')carregarPendentes();
 }
 function escolherSubaba(sub) {
   APP.subaba=sub;
@@ -1044,107 +1046,124 @@ async function mudarStatusFolga(id,status) {
   }catch(e){showMessage(e.message,'Falha ao atualizar',true);return false;}
 }
 
+// Ordem original do cadastro, inclusive em caso de falha e reenvio posterior.
+function dataOrdemCarta(carta) {
+  const valor=String(carta?.ordemLancamento||carta?.criadoEm||carta?.dados?.ordemCriacao||'');
+  // Texto do servidor = horário de Brasília; fila do navegador = ISO UTC.
+  if(!valor)return 0;
+  const instante=/^\d{4}-\d{2}-\d{2}T/.test(valor)?Date.parse(valor):
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(valor)?
+      Date.parse(valor.replace(' ','T')+'-03:00'):Date.parse(valor);
+  return Number.isFinite(instante)?instante:0;
+}
+function ordenarCartasPorLancamento(cartas) {
+  return cartas.sort((a,b)=>dataOrdemCarta(b)-dataOrdemCarta(a));
+}
 async function carregarCartas() {
   if(APP.sessao?.perfil!=='ADM')return false;
   try{
-    APP.cartas=(await api('getDadosADM')).dados||[];
+    APP.cartas=ordenarCartasPorLancamento((await api('getDadosADM')).dados||[]);
     renderCartas();
     if(APP.subaba==='capa')renderCapa();
     if(APP.subaba==='relatorios')renderRelatorios();
     atualizarResponsaveis();
+    // Dados frescos do servidor devem prevalecer sobre o cache da lista.
+    APP.pendentes=[];
     atualizarPendentesAdmLocal();
     return true;
   }catch(e){$('tbody-cartas').innerHTML=`<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;return false;}
 }
 function atualizarPendentesAdmLocal() {
   if(APP.sessao?.perfil!=='ADM')return;
-  APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM');
+  const anteriores=new Map(APP.pendentes.map(c=>[c.id,c]));
+  APP.pendentes=APP.cartas.filter(c=>c.status!=='SIM').map(c=>{
+    const antigo=anteriores.get(c.id);
+    return {...c,controleEncarregado:antigo?.controleEncarregado||c.controleEncarregado,
+      assinaturaMarcadaPor:antigo?.assinaturaMarcadaPor||c.assinaturaMarcadaPor||''};
+  });
   definirBadge('badge-pendentes',APP.pendentes.length);
   renderPendentes();
 }
-// V30.1 — aprendizado local baseado nas últimas confirmações efetivas de assinatura.
-// Não usar as cartas importadas do Excel como treinamento: elas não provam
-// qual usuário do site realmente confirmou a assinatura.
-let historicoResponsaveisCarta = new Map();
-const estadoSugestaoCarta = {colaborador:'',automatico:'',editadoManualmente:false};
-const chaveAprendizadoCarta = nome => chaveFuncionarioCarta(nome);
-
-function construirHistoricoResponsaveisCarta(cartas) {
-  const assinaturas = new Map();
-  for(const carta of cartas) {
-    if(carta.status !== 'SIM' || !String(carta.dataConfirmacao||'').trim())continue;
-    const funcionario=chaveAprendizadoCarta(carta.funcionario);
-    const responsavel=String(carta.responsavel||'').trim();
-    if(!funcionario || !responsavel)continue;
-    if(!assinaturas.has(funcionario))assinaturas.set(funcionario,[]);
-    assinaturas.get(funcionario).push({
-      nome:responsavel,
-      chave:chaveAprendizadoCarta(responsavel),
-      quando:String(carta.dataConfirmacao)
-    });
+// V31.11 — sugestões fundamentadas em ASSINADA no controle do encarregado.
+// Inclui cartas normais e (FALTA) pela mesma identidade do funcionário.
+let historicoResponsaveisCarta=new Map();
+const estadoSugestaoCarta={colaborador:'',automatico:'',editadoManualmente:false};
+function chaveAprendizadoCarta(nome,empresa='') {
+  const base=norm(separarNomeCarta(nome).nomeBase).replace(/\s+/g,' ');
+  const emp=norm(empresa);
+  if(emp&&base)return 'OFICIAL|'+base+'|'+emp;
+  return chaveFuncionarioCarta(nome);
+}
+function construirHistoricoResponsaveisCarta(assinaturas) {
+  const eventosPorFuncionario=new Map();
+  for(const a of assinaturas||[]) {
+    const funcionario=chaveAprendizadoCarta(a.funcionario,a.empresa);
+    const responsavel=String(a.marcadoPor||'').trim();
+    if(!funcionario||!responsavel)continue;
+    if(!eventosPorFuncionario.has(funcionario))eventosPorFuncionario.set(funcionario,[]);
+    eventosPorFuncionario.get(funcionario).push({nome:responsavel,chave:norm(responsavel),quando:String(a.quando||'')});
   }
   const padroes=new Map();
-  for(const [funcionario,eventos] of assinaturas) {
-    // O limite de 12 assinaturas recentes permite aprender mudanças de operação.
+  for(const [funcionario,eventos] of eventosPorFuncionario) {
     const recentes=eventos.sort((a,b)=>b.quando.localeCompare(a.quando)).slice(0,12);
     const contagem=new Map();
     for(const evento of recentes) {
-      const item=contagem.get(evento.chave)||{nome:evento.nome,quantidade:0};
+      const item=contagem.get(evento.chave)||{nome:evento.nome,quantidade:0,ultimo:evento.quando};
       item.quantidade++;contagem.set(evento.chave,item);
     }
-    const colocados=[...contagem.values()].sort((a,b)=>b.quantidade-a.quantidade||a.nome.localeCompare(b.nome,'pt-BR'));
-    const maior=colocados[0];
-    const total=recentes.length;
-    const confiavel=maior && maior.quantidade>=2 && maior.quantidade/total>=0.6 &&
-      maior.quantidade>(colocados[1]?.quantidade||0);
-    padroes.set(funcionario,{total,maior,confiavel:!!confiavel});
+    const colocados=[...contagem.values()].sort((a,b)=>b.quantidade-a.quantidade||b.ultimo.localeCompare(a.ultimo));
+    const maior=colocados[0],total=recentes.length;
+    // Uma única confirmação já permite uma sugestão, nunca uma obrigação.
+    padroes.set(funcionario,{total,maior,confiavel:!!maior});
   }
   return padroes;
 }
-function sugestaoResponsavelAprendida(nome,padroes=historicoResponsaveisCarta) {
-  return padroes.get(chaveAprendizadoCarta(nome))||null;
+function sugestaoResponsavelAprendida(nome,empresa='') {
+  return historicoResponsaveisCarta.get(chaveAprendizadoCarta(nome,empresa))||null;
 }
 function reconstruirHistoricoResponsaveisCarta() {
-  historicoResponsaveisCarta=construirHistoricoResponsaveisCarta(APP.cartas);
+  historicoResponsaveisCarta=construirHistoricoResponsaveisCarta(APP.assinaturasResponsaveis);
   aplicarAprendizadoResponsavelCarta();
+}
+async function carregarAssinaturasResponsaveis() {
+  if(APP.sessao?.perfil!=='ADM')return false;
+  try {
+    const resposta=await api('getAssinaturasResponsaveisADM');
+    APP.assinaturasResponsaveis=Array.isArray(resposta.dados)?resposta.dados:[];
+    reconstruirHistoricoResponsaveisCarta();
+    return true;
+  }catch(err){
+    console.warn('Sugestões de responsáveis indisponíveis:',err.message);
+    return false; // A falha de sugestões não pode impedir o cadastro de cartas.
+  }
 }
 function aplicarAprendizadoResponsavelCarta() {
   const funcionario=$('carta-funcionario'),responsavel=$('carta-responsavel');
   const aviso=$('carta-responsavel-aprendizado');
   if(!funcionario||!responsavel||!aviso)return;
-  const nome=chaveAprendizadoCarta(funcionario.value);
+  const ident=identificarFuncionarioCarta(funcionario.value);
+  const nome=ident.nome?chaveAprendizadoCarta(ident.nome,ident.empresa):'';
   if(nome!==estadoSugestaoCarta.colaborador) {
-    // Limpar apenas um palpite anterior: nunca apagar escolha escrita pelo usuário.
-    if(!estadoSugestaoCarta.editadoManualmente && estadoSugestaoCarta.automatico &&
-      responsavel.value===estadoSugestaoCarta.automatico)responsavel.value='';
+    if(!estadoSugestaoCarta.editadoManualmente&&estadoSugestaoCarta.automatico&&
+       responsavel.value===estadoSugestaoCarta.automatico)responsavel.value='';
     estadoSugestaoCarta.colaborador=nome;
     estadoSugestaoCarta.automatico='';
   }
-  if(APP.cartaEditando||!nome || !identificarFuncionarioCarta(funcionario.value).nome) {
-    aviso.hidden=true;aviso.textContent='';return;
-  }
-  const padrao=sugestaoResponsavelAprendida(nome);
-  aviso.hidden=false;
-  aviso.classList.remove('carta-aprendizado-confiavel');
-  if(!padrao) {
-    aviso.textContent='Ainda não há assinaturas confirmadas no site para sugerir um responsável.';
-    return;
-  }
-  if(!padrao.confiavel) {
-    aviso.textContent=`Aprendendo com as assinaturas: ${padrao.total} confirmação(ões), ainda sem um responsável predominante. Preencha livremente.`;
-    return;
-  }
+  if(APP.cartaEditando||!nome) {aviso.hidden=true;aviso.textContent='';return;}
+  const padrao=sugestaoResponsavelAprendida(ident.nome,ident.empresa);
+  aviso.hidden=false;aviso.classList.remove('carta-aprendizado-confiavel');
+  if(!padrao){aviso.textContent='Sem confirmação anterior de assinatura pelo encarregado para sugerir um responsável.';return;}
   const melhor=padrao.maior;
-  if(!estadoSugestaoCarta.editadoManualmente && !responsavel.value.trim()) {
-    responsavel.value=melhor.nome;
-    estadoSugestaoCarta.automatico=melhor.nome;
+  if(!estadoSugestaoCarta.editadoManualmente&&!responsavel.value.trim()) {
+    responsavel.value=melhor.nome;estadoSugestaoCarta.automatico=melhor.nome;
   }
   aviso.classList.add('carta-aprendizado-confiavel');
-  aviso.textContent=`Sugestão: ${melhor.nome} (${melhor.quantidade} de ${padrao.total} confirmações recentes). Você pode alterar o nome.`;
+  aviso.textContent=`Sugestão: ${melhor.nome} — ${melhor.quantidade} de ${padrao.total} assinatura(s) recente(s) pelo encarregado. Pode alterar.`;
 }
 
 function atualizarResponsaveis() {
-  const lista=[...new Set(APP.cartas.map(x=>x.responsavel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const lista=[...new Set([...APP.cartas.map(x=>x.responsavel),
+    ...APP.assinaturasResponsaveis.map(x=>x.marcadoPor)].filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   $('lista-responsaveis').innerHTML=lista.map(s=>`<option value="${esc(s)}"></option>`).join('');
   reconstruirHistoricoResponsaveisCarta();
 }
@@ -1157,21 +1176,42 @@ function textoComplementarCarta(c) {
   const adicional=(c.adicional||'').trim(), obs=(c.observacoes||'').trim();
   return obs&&adicional&&norm(obs)!==norm(adicional)?`${adicional} | ${obs}`:obs||adicional;
 }
+// O botão de atribuição só aparece se a última ação do encarregado foi
+// ASSINADA. O servidor valida novamente o evento antes de alterar a planilha.
+function nomeEncarregadoAssinatura(carta) {
+  if(carta.status==='SIM'||carta.controleEncarregado!=='ASSINADA')return '';
+  const nome=String(carta.assinaturaMarcadaPor||'').trim();
+  return nome&&norm(nome)!==norm(carta.responsavel)?nome:'';
+}
+function botoesConfirmacaoCarta(carta,curto=false) {
+  const nome=nomeEncarregadoAssinatura(carta);
+  const id=esc(carta.id);
+  const rotulo=curto?'Confirmar':'Confirmar assinatura';
+  return `<button type="button" class="btn ${curto?'tiny subtle':'primary'} carta-assinar" data-id="${id}">${rotulo}</button>`+
+    (nome?`<button type="button" class="btn ${curto?'tiny':'secondary'} carta-assinar-atribuir" data-id="${id}" title="Confirmar assinatura e trocar o responsável para ${esc(nome)}">Confirmar + ${esc(nome)}</button>`:'');
+}
 function renderCartas() {
   $('cartas-total').textContent=APP.cartas.length;
   $('cartas-pendentes').textContent=APP.cartas.filter(c=>c.status!=='SIM').length;
   $('cartas-assinadas').textContent=APP.cartas.filter(c=>c.status==='SIM').length;
   const lista=filtroDeCartas({texto:$('filtro-cartas').value,status:$('filtro-cartas-status').value,mes:$('filtro-cartas-mes').value});
-  const exibidas=lista.slice(0,200);
-  $('tbody-cartas').innerHTML=exibidas.length?exibidas.map(c=>`<tr><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td><span class="status ${c.status==='SIM'?'concedida':'planejada'}">${esc(c.status)}</span></td><td>${esc(textoComplementarCarta(c)||'—')}</td><td><div class="cell-actions carta-acoes">${c.status!=='SIM'?`<button class="btn tiny subtle carta-assinar" data-id="${esc(c.id)}">Confirmar</button>`:''}<button class="btn tiny secondary carta-editar" data-id="${esc(c.id)}" type="button">Editar</button><button class="btn tiny carta-excluir" data-id="${esc(c.id)}" type="button" aria-label="Excluir carta de ${esc(c.funcionario)}">Excluir</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma carta encontrada.</td></tr>';
-  const enviando=cartasEmEnvioVisiveis();
-  if(enviando.length)$('tbody-cartas').insertAdjacentHTML('afterbegin',enviando.map(linhaCartaEmEnvio).join(''));
-  if(lista.length>exibidas.length)$('tbody-cartas').innerHTML+=`<tr><td colspan="7" class="empty">Exibindo ${exibidas.length} de ${lista.length} cartas. Use os filtros para localizar outros registros.</td></tr>`;
+  const salvas=lista.map(c=>({ordem:dataOrdemCarta(c),conteudo:`<tr><td class="mono">${fmtData(c.dataOcorrencia)}</td><td><strong>${esc(c.funcionario)}</strong></td><td>${esc(c.responsavel||'—')}</td><td class="mono">${fmtData(c.dataCorrecao)}</td><td><span class="status ${c.status==='SIM'?'concedida':'planejada'}">${esc(c.status)}</span></td><td>${esc(textoComplementarCarta(c)||'—')}</td><td><div class="cell-actions carta-acoes">${c.status!=='SIM'?botoesConfirmacaoCarta(c,true):''}<button class="btn tiny secondary carta-editar" data-id="${esc(c.id)}" type="button">Editar</button><button class="btn tiny carta-excluir" data-id="${esc(c.id)}" type="button" aria-label="Excluir carta de ${esc(c.funcionario)}">Excluir</button></div></td></tr>`}));
+  const locais=cartasEmEnvioVisiveis().map(item=>({ordem:dataOrdemCarta(item),conteudo:linhaCartaEmEnvio(item)}));
+  const linhas=[...salvas,...locais].sort((a,b)=>b.ordem-a.ordem);
+  $('tbody-cartas').innerHTML=linhas.length?linhas.slice(0,200).map(x=>x.conteudo).join(''):
+    '<tr><td colspan="7" class="empty">Nenhuma carta encontrada.</td></tr>';
+  if(linhas.length>200)$('tbody-cartas').innerHTML+=`<tr><td colspan="7" class="empty">Exibindo 200 de ${linhas.length} cartas. Use os filtros para localizar outros registros.</td></tr>`;
 }
 function identificarFuncionarioCarta(nome) {
   const {falta,nomeBase}=separarNomeCarta(nome);
   const nomeLimpo=nomeBase.replace(/\s+/g,' ').trim();
   if(!nomeLimpo)return {erro:'Informe o nome do funcionário após (FALTA).'};
+  // Uma escolha explícita do menu vence ambiguidade de nomes entre empresas.
+  if(funcionarioCartaSelecionado&&norm(funcionarioCartaSelecionado.nome)===norm(nomeLimpo)) {
+    const escolhido=funcionarioCartaSelecionado;
+    return {nome:formatarNomeCarta(escolhido.nome,falta),empresa:escolhido.empresa,
+      nomeOficial:escolhido.nome};
+  }
   const localizado=localizarNomeCartaNaBase(nomeLimpo);
   if(localizado.ambiguo) return {erro:'Esse nome abreviado corresponde a mais de um funcionário. Digite mais partes do nome.'};
   if(!localizado.registro) {
@@ -1193,6 +1233,7 @@ function atualizarEmpresaCarta() {
   return empresa;
 }
 function definirModoCarta(c=null) {
+  funcionarioCartaSelecionado=null;
   fecharSugestoesCarta.forEach(fechar=>fechar());
   APP.cartaEditando=c?.id||null;
   estadoSugestaoCarta.colaborador='';
@@ -1282,6 +1323,7 @@ async function enviarFilaCartas() {
         const idx=APP.cartas.findIndex(c=>c.id===resposta.carta.id);
         if(idx>=0)APP.cartas[idx]=resposta.carta;
         else APP.cartas.unshift(resposta.carta);
+        ordenarCartasPorLancamento(APP.cartas);
         gravadas++;
       }else{item.estado='erro';item.erro=resposta.erro||'Não foi possível gravar esta carta.';}
     }
@@ -1320,7 +1362,8 @@ async function salvarCarta(e) {
     const dados={funcionario:ident.nome||nome,empresa,
       dataOcorrencia:dataParaISO($('carta-ocorrencia').value),responsavel:$('carta-responsavel').value.trim(),
       dataCorrecao:dataParaISO($('carta-correcao').value),assinado:$('carta-assinado').value,
-      observacoes:$('carta-obs').value.trim()};
+      observacoes:$('carta-obs').value.trim(),
+      ordemCriacao:new Date().toISOString()};
     if(!dados.dataOcorrencia)throw Error('Informe a data da ocorrência.');
     const editando=APP.cartaEditando;
     if(editando){
@@ -1328,6 +1371,7 @@ async function salvarCarta(e) {
       if(!r.carta)throw Error('O servidor não retornou a carta editada. Atualize o histórico.');
       const idx=APP.cartas.findIndex(c=>c.id===editando);
       if(idx!==-1)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);
+      ordenarCartasPorLancamento(APP.cartas);
       definirModoCarta();reexibirCartasLocais();
       feedbackAtualizacao('Alterações da carta salvas no Google Sheets.');
       return true;
@@ -1392,21 +1436,74 @@ async function excluirCarta(id) {
     return true;
   }catch(e){showMessage(e.message,'Falha ao excluir carta',true);return false;}
 }
-async function carregarPendentes() {
-  if(APP.sessao?.perfil==='ADM')return carregarCartas();
-  try {
-    APP.pendentes=(await api('getDadosEncarregado')).dados||[];
-    renderPendentes();return true;
-  }catch(e){$('lista-pendentes').innerHTML=`<p class="empty">${esc(e.message)}</p>`;return false;}
+let carregamentoPendentesEmCurso=null;
+function carregarPendentes() {
+  // Dois cliques seguidos ou o auto-refresh não iniciam duas consultas iguais.
+  if(carregamentoPendentesEmCurso)return carregamentoPendentesEmCurso;
+  carregamentoPendentesEmCurso=(async()=>{
+    try {
+      const admin=APP.sessao?.perfil==='ADM';
+      const r=await api(admin?'getPendentesADM':'getDadosEncarregado');
+      APP.pendentes=Array.isArray(r.dados)?r.dados:[];
+      renderPendentes();
+      return true;
+    }catch(e){
+      const lista=$('lista-pendentes');
+      if(lista&&!APP.pendentes.length)lista.innerHTML=`<p class="empty">${esc(e.message)}</p>`;
+      else feedbackAtualizacao('Não foi possível atualizar as pendências. A lista anterior foi mantida.',true);
+      return false;
+    }
+  })().finally(()=>{carregamentoPendentesEmCurso=null;});
+  return carregamentoPendentesEmCurso;
+}
+// V31.12 — buscar e ordenar no navegador: sem alterar o banco de dados
+// e sem pedir novas consultas ao Apps Script a cada tecla.
+function filtrarEOrdenarCartasPendentes(cartas,config) {
+  const termo=norm(config?.busca||'').replace(/\s+/g,' ');
+  const tipo=config?.ordem||'DATA_ASC';
+  const filtradas=cartas.filter(c=>{
+    const nome=norm(c.funcionario||'').replace(/\s+/g,' ');
+    const nomeBase=norm(separarNomeCarta(c.funcionario).nomeBase).replace(/\s+/g,' ');
+    return !termo||nome.includes(termo)||nomeBase.includes(termo);
+  });
+  const chaveData=c=>dataParaISO(c.dataOcorrencia)||''; // AAAA-MM-DD: ordenação cronológica
+  const chaveNome=c=>norm(separarNomeCarta(c.funcionario).nomeBase);
+  const anterior=(a,b)=>dataOrdemCarta(b)-dataOrdemCarta(a); // desempate estável
+  const comparar=(a,b)=>{
+    if(tipo==='NOME_ASC'||tipo==='NOME_DESC'){
+      const dif=chaveNome(a).localeCompare(chaveNome(b),'pt-BR',{sensitivity:'base',numeric:true});
+      if(dif)return tipo==='NOME_ASC'?dif:-dif;
+      const dataA=chaveData(a),dataB=chaveData(b);
+      if(dataA&&dataB&&dataA!==dataB)return dataA<dataB?-1:1;
+      return anterior(a,b);
+    }
+    const da=chaveData(a),db=chaveData(b);
+    if(da&&db&&da!==db)return tipo==='DATA_DESC'?(da>db?-1:1):(da<db?-1:1);
+    // Datas vazias ou inválidas sempre no fim, independentemente da direção.
+    if(!da&&db)return 1;
+    if(da&&!db)return -1;
+    return chaveNome(a).localeCompare(chaveNome(b),'pt-BR',{sensitivity:'base',numeric:true})||anterior(a,b);
+  };
+  return filtradas.sort(comparar);
 }
 function renderPendentes() {
   const filtro=$('filtro-controle-enc')?.value||'PENDENTE';
   const pendentes=APP.pendentes.filter(c=>c.controleEncarregado!=='ASSINADA').length;
   definirBadge('badge-pendentes',pendentes);
   const ehAdm=APP.sessao?.perfil==='ADM';
-  const filtros=$('filtro-controle-enc')?.parentElement; if(filtros)filtros.hidden=ehAdm;
-  const exibidas=ehAdm?APP.pendentes:APP.pendentes.filter(c=>filtro==='TODAS'||(filtro==='ASSINADA'
+  const descricao=$('descricao-cartas-pendentes');
+  if(descricao)descricao.textContent=ehAdm
+    ?'Confirme as assinaturas registradas. Só o administrador altera o responsável e a situação oficial da carta.'
+    :'Registre assinaturas e pedidos de reimpressão para seu controle. Essas ações não alteram as cartas oficiais.';
+  const filtros=$('filtro-controle-enc')?.closest('.tm-pendente-status');
+  if(filtros)filtros.hidden=ehAdm;
+  const cartasStatus=ehAdm?APP.pendentes:APP.pendentes.filter(c=>filtro==='TODAS'||(filtro==='ASSINADA'
     ?c.controleEncarregado==='ASSINADA':c.controleEncarregado!=='ASSINADA'));
+  const exibidas=filtrarEOrdenarCartasPendentes(cartasStatus,{
+    busca:$('busca-cartas-pendentes')?.value||'',ordem:$('ordenar-cartas-pendentes')?.value||'DATA_ASC'
+  });
+  const contador=$('contador-cartas-pendentes');
+  if(contador)contador.textContent=`Exibindo ${exibidas.length} de ${cartasStatus.length} ${cartasStatus.length===1?'carta':'cartas'}`;
   $('lista-pendentes').innerHTML=exibidas.length?exibidas.map(c=>{
     const assinatura=c.controleEncarregado==='ASSINADA';
     const reimpressao=c.controleEncarregado==='REIMPRESSAO';
@@ -1418,14 +1515,16 @@ function renderPendentes() {
         <p>${esc(c.motivo||'Carta de ponto')}${c.responsavel?' • Entregue a: '+esc(c.responsavel):''}</p>
         <span class="tm-mov-status ${assinatura?'tm-enc-assinada':reimpressao?'tm-enc-reimpressao':'tm-enc-pendente'}">${assinatura?'Assinatura recebida':reimpressao?'Reimpressão solicitada':'Aguardando assinatura'+rotuloVia}</span>
       </div><div class="tm-pendente-acoes">
-        ${ehAdm?`<button type="button" class="btn primary carta-assinar" data-id="${esc(c.id)}">Confirmar assinatura</button>`:
+        ${ehAdm?botoesConfirmacaoCarta(c):
           `${!assinatura?`<button type="button" class="btn primary tm-enc-registrar" data-id="${esc(c.id)}" data-status="ASSINADA">Marcar assinatura recebida</button>`:''}
           <button type="button" class="btn secondary tm-enc-registrar" data-id="${esc(c.id)}" data-status="REIMPRESSAO" ${reimpressao?'disabled title="Já existe solicitação de reimpressão"':''}>Solicitar reimpressão</button>`}
       </div></article>`;
-  }).join(''):'<div class="empty tall">Nenhuma carta neste filtro.</div>';
+  }).join(''):`<div class="empty tall">${$('busca-cartas-pendentes')?.value?.trim()?'Nenhuma carta encontrada para esse nome.':'Nenhuma carta neste filtro.'}</div>`;
 }
+const acoesEncarregadoEmCurso=new Set();
 async function registrarAcaoCartaEncarregado(id,status) {
-  if(APP.sessao?.perfil!=='ENCARREGADO')return false;
+  if(APP.sessao?.perfil!=='ENCARREGADO'||acoesEncarregadoEmCurso.has(id))return false;
+  acoesEncarregadoEmCurso.add(id);
   try {
     const idSolicitacao=crypto.randomUUID?.()||('ENC-'+Date.now()+'-'+Math.random().toString(36).slice(2));
     const r=await api('registrarAcaoCartaEncarregado',{idCarta:id,status,idSolicitacao});
@@ -1436,16 +1535,36 @@ async function registrarAcaoCartaEncarregado(id,status) {
     feedbackAtualizacao(status==='ASSINADA'?'Assinatura marcada no seu controle. O histórico do ADM não foi alterado.':'Reimpressão solicitada e enviada ao painel do administrador.');
     return true;
   }catch(e){showMessage(e.message,'Não foi possível registrar a ação',true);return false;}
+  finally{acoesEncarregadoEmCurso.delete(id);}
 }
-async function confirmarCarta(id) {
-  if(APP.sessao?.perfil!=='ADM')return false;
+const confirmacoesCartaEmCurso=new Set();
+async function confirmarCarta(id,usarNomeDoEncarregado=false,idAcaoAssinada='') {
+  if(APP.sessao?.perfil!=='ADM'||confirmacoesCartaEmCurso.has(id))return false;
+  confirmacoesCartaEmCurso.add(id);
   try {
-    const r=await api('confirmarCarta',{idCarta:id});
+    const r=await api('confirmarCarta',{idCarta:id,usarNomeDoEncarregado,idAcaoAssinada});
     if(!r.carta)throw Error('O servidor não confirmou a carta. Recarregue o histórico.');
+    // O nome é obtido e validado pelo Apps Script, nunca enviado pelo navegador.
+    if(usarNomeDoEncarregado&&idAcaoAssinada){
+      const origem=(APP.acoesCartas||[]).find(a=>a.id===idAcaoAssinada&&a.idCarta===id);
+      if(origem&&norm(r.carta.responsavel)!==norm(origem.marcadoPor))
+        throw Error('A confirmação não atribuiu o responsável esperado. Atualize as ações.');
+    }
     const idx=APP.cartas.findIndex(c=>c.id===id);
     if(idx>=0)APP.cartas[idx]=r.carta;else APP.cartas.unshift(r.carta);
-    reexibirCartasLocais();feedbackAtualizacao('Assinatura confirmada no histórico administrativo.');return true;
+    APP.pendentes=APP.pendentes.filter(c=>c.id!==id);
+    // Uma assinatura atribuída deixa a fila de ações do ADM imediatamente.
+    if(usarNomeDoEncarregado){
+      APP.acoesCartas=(APP.acoesCartas||[]).filter(a=>a.idCarta!==id);
+      renderAcoesCartas();
+    }
+    reexibirCartasLocais();
+    feedbackAtualizacao(usarNomeDoEncarregado?
+      `Assinatura SIM; responsável atualizado para ${r.carta.responsavel}.`:
+      'Assinatura SIM confirmada; responsável mantido.');
+    return true;
   }catch(e){showMessage(e.message,'Não foi possível confirmar',true);return false;}
+  finally{confirmacoesCartaEmCurso.delete(id);}
 }
 
 let atualizandoAcoesCartas=false;
@@ -1465,6 +1584,7 @@ function renderAcoesCartas() {
       <small>Carta: ${esc(fmtData(a.dataOcorrencia))}</small></div>
     <div class="tm-aviso-quem" title="Registrado em ${esc(fmtDataHora(a.quando))}">${esc(a.marcadoPor||'—')}</div>
     <div class="tm-aviso-acao"><span class="tm-aviso-situacao ${a.status==='ASSINADA'?'tm-aviso-assinada':'tm-aviso-reimpressao'}">${a.status==='ASSINADA'?'Assinada':'Reimpressão'}</span>
+      ${a.status==='ASSINADA'&&APP.sessao?.perfil==='ADM'?`<button type="button" class="btn tiny primary tm-aviso-confirmar-assinatura" data-id="${esc(a.idCarta)}" data-acao="${esc(a.id)}" title="Marcar SIM e atribuir o responsável a ${esc(a.marcadoPor)}" aria-label="Confirmar assinatura de ${esc(a.funcionario)} e atribuir a ${esc(a.marcadoPor)}">Confirmar</button>`:''}
       ${a.status==='REIMPRESSAO'?`<button type="button" class="btn tiny primary tm-reimpressao-ok" data-id="${esc(a.idCarta)}" title="Reimpressão feita: devolve a carta ao encarregado" aria-label="Marcar reimpressão de ${esc(a.funcionario)} como feita">✓ OK</button>`:''}</div>
   </article>`).join(''):'<p class="tm-avisos-vazio">Nenhuma movimentação registrada pelos encarregados.</p>';
 }
@@ -1550,6 +1670,25 @@ function imprimirCapa() {
   const win=window.open('','_blank');
   if(!win)return showMessage('Seu navegador bloqueou a janela de impressão. Libere pop-ups para este site.','Impressão bloqueada',true);
 
+  // Apenas confirmação explícita limpa a seleção. O navegador não distingue
+  // 'Imprimir' de 'Cancelar' no diálogo nativo (ambos disparam afterprint).
+  const identificadorImpressao=crypto.randomUUID?.()||String(Date.now());
+  const idsImpressos=new Set(itens.map(c=>c.id));
+  const receberConfirmacao=evento=>{
+    if(evento.source!==win||evento.origin!==location.origin||
+       evento.data?.tipo!=='TM_CARTAS_IMPRESSAO_CONFIRMADA'||
+       evento.data?.id!==identificadorImpressao)return;
+    for(const id of idsImpressos)APP.selecionadas.delete(id);
+    ultimaCartaCapaMarcada=null;
+    renderCapa();
+    window.removeEventListener('message',receberConfirmacao);
+  };
+  window.addEventListener('message',receberConfirmacao);
+  // Evita listener órfão quando a guia é fechada sem imprimir.
+  const monitorJanela=setInterval(()=>{
+    if(!win.closed)return;
+    clearInterval(monitorJanela);window.removeEventListener('message',receberConfirmacao);
+  },1500);
   const linhas=itens.map(c=>`<tr><td>${esc(fmtData(c.dataOcorrencia))}</td><td>${esc(c.funcionario)}</td><td>${esc(c.responsavel||'—')}</td><td>${esc(fmtData(c.dataCorrecao))}</td></tr>`).join('');
   const emissao=new Intl.DateTimeFormat('pt-BR',{
     timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',
@@ -1582,7 +1721,16 @@ function imprimirCapa() {
                    flex:1; text-align:center; font-size:10px; font-weight:700; }
   .emissao { position:fixed; bottom:11mm; left:12mm; right:12mm;
              text-align:left; font-size:10px; font-weight:700; }
-  @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+  .tm-pos-impressao { position:fixed;top:0;left:0;right:0;background:#f4f8fc;
+      border-bottom:2px solid #1f4e78;padding:12px 18px;z-index:100;
+      font:13px/1.5 Arial,sans-serif;font-weight:400;display:flex;
+      gap:12px;align-items:center;justify-content:center;flex-wrap:wrap; }
+  .tm-pos-impressao[hidden] { display:none; }
+  .tm-pos-impressao button { cursor:pointer;padding:8px 13px;border:0;border-radius:7px;
+      background:#1f4e78;color:white;font-size:12px;font-weight:700; }
+  .tm-pos-impressao button.secundario { background:white;color:#1f4e78;border:1px solid #1f4e78; }
+  @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    .tm-pos-impressao { display:none!important; } }
   </style></head><body>
     <main class="documento">
       <h1>CONTROLE DE RECEBIMENTO CORREÇÃO DE PONTO</h1>
@@ -1592,7 +1740,24 @@ function imprimirCapa() {
       <div class="assinatura"><div>Responsável pela entrega</div><div>Responsável pelo recebimento</div></div>
     </main>
     <footer class="emissao">Emissão: ${esc(emissao)}</footer>
-    <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),300));</script>
+    <div class="tm-pos-impressao" id="tm-pos-impressao" hidden>
+      <strong>Você imprimiu ou salvou o documento em PDF?</strong>
+      <button type="button" id="tm-confirmar-impressao">Sim — concluir e desmarcar</button>
+      <button type="button" class="secundario" id="tm-cancelar-impressao">Não — manter seleção</button>
+    </div>
+    <script>
+      (()=>{
+        const painel=document.getElementById('tm-pos-impressao');
+        document.getElementById('tm-confirmar-impressao').addEventListener('click',()=>{
+          try{window.opener?.postMessage({tipo:'TM_CARTAS_IMPRESSAO_CONFIRMADA',
+            id:${JSON.stringify(identificadorImpressao)}},location.origin);}catch(_){ }
+          window.close();
+        });
+        document.getElementById('tm-cancelar-impressao').addEventListener('click',()=>window.close());
+        window.addEventListener('afterprint',()=>{painel.hidden=false;});
+        window.addEventListener('load',()=>setTimeout(()=>window.print(),300));
+      })();
+    <\/script>
   </body></html>`;
   win.document.open();win.document.write(html);win.document.close();
 }
@@ -1950,11 +2115,18 @@ function onClickDelegado(e) {
     });
     return;
   }
+  const confirmarAviso=e.target.closest('.tm-aviso-confirmar-assinatura');
+  if(confirmarAviso)return comBotaoCarregando(confirmarAviso,
+    ()=>confirmarCarta(confirmarAviso.dataset.id,true,confirmarAviso.dataset.acao),
+    'Confirmando…');
   const reimpOk=e.target.closest('.tm-reimpressao-ok');
   if(reimpOk)return comBotaoCarregando(reimpOk,()=>concluirReimpressao(reimpOk.dataset.id),'Salvando…');
   const novoControle=e.target.closest('.tm-enc-registrar');
   if(novoControle)return comBotaoCarregando(novoControle,()=>registrarAcaoCartaEncarregado(novoControle.dataset.id,novoControle.dataset.status),'Registrando…');
-  const assinar=e.target.closest('.carta-assinar');if(assinar)return comBotaoCarregando(assinar,()=>confirmarCarta(assinar.dataset.id),'Confirmando…');
+  const atribuir=e.target.closest('.carta-assinar-atribuir');
+  if(atribuir)return comBotaoCarregando(atribuir,()=>confirmarCarta(atribuir.dataset.id,true),'Confirmando e atribuindo…');
+  const assinar=e.target.closest('.carta-assinar');
+  if(assinar)return comBotaoCarregando(assinar,()=>confirmarCarta(assinar.dataset.id,false),'Confirmando…');
   const folga=e.target.closest('.folga-status');if(folga)return comBotaoCarregando(folga,()=>mudarStatusFolga(folga.dataset.id,folga.dataset.status),'Salvando…');
   const planejar=e.target.closest('.acao-planejar');
   if(planejar) {try{preencherPlanejamento(JSON.parse(decodeURIComponent(planejar.dataset.employee)));}catch(e){showMessage('Não foi possível selecionar o funcionário.','Erro',true);}}
@@ -1975,8 +2147,27 @@ function instalarAtualizacaoDeCartas(){
 }
 // Sugestões próprias para que Enter selecione o nome, sem submeter o formulário.
 const fecharSugestoesCarta=[];
+// V31.12.3 — restaurar lista de colaboradores com nome + empresa na carta.
+// Priorizamos FUNCIONARIOS/MobPonto, com histórico de cartas como reserva.
+let funcionarioCartaSelecionado=null;
+function colaboradoresParaSugestaoCarta() {
+  const unicos=new Map();
+  for(const f of [...funcionariosParaFolga(),...APP.cartas.map(c=>({
+    nome:separarNomeCarta(c.funcionario).nomeBase,empresa:c.empresa||''
+  }))]) {
+    const nome=String(f?.nome||'').trim(),empresa=String(f?.empresa||'').trim();
+    // Não mostrar cadastros incompletos vindos de cartas históricas.
+    // O cadastro atual do MobPonto tem prioridade; cartas antigas só
+    // complementam a lista quando têm uma empresa de fato informada.
+    if(!nome||!empresa)continue;
+    const chave=norm(nome)+'|'+norm(empresa);
+    if(!unicos.has(chave))unicos.set(chave,{nome,empresa});
+  }
+  return [...unicos.values()];
+}
 function configurarSugestaoCarta(idInput,idLista,obterValores,aposSelecionar=()=>{}) {
   const campo=$(idInput),lista=$(idLista);
+  const eFuncionario=idInput==='carta-funcionario';
   let opcoes=[],indice=0;
   function fechar() {
     lista.hidden=true;lista.replaceChildren();opcoes=[];
@@ -1994,31 +2185,46 @@ function configurarSugestaoCarta(idInput,idLista,obterValores,aposSelecionar=()=
   }
   function selecionar(i) {
     const escolhido=opcoes[i];if(!escolhido)return;
-    campo.value=idInput==='carta-funcionario'?nomeHistoricoPreferidoCarta(escolhido):escolhido;
+    if(eFuncionario) {
+      // Empresa escolhida é preservada inclusive para homônimos entre filiais.
+      funcionarioCartaSelecionado={nome:escolhido.nome,empresa:escolhido.empresa};
+      campo.value=formatarNomeCarta(escolhido.nome,separarNomeCarta(campo.value).falta);
+    } else campo.value=escolhido;
     campo.dispatchEvent(new Event('input',{bubbles:true}));
     campo.dispatchEvent(new Event('change',{bubbles:true}));
     fechar();aposSelecionar();
     campo.focus({preventScroll:true});
   }
   function atualizar() {
-    // Para cartas (FALTA), buscar o funcionário pelo nome real e manter
-    // o prefixo ao selecionar a sugestão com Enter ou com o mouse.
-    const eFuncionario=idInput==='carta-funcionario';
-    const nomeDigitado=eFuncionario?separarNomeCarta(campo.value):{falta:false,nomeBase:campo.value};
+    const nomeDigitado=eFuncionario?separarNomeCarta(campo.value):{nomeBase:campo.value};
     const busca=norm(nomeDigitado.nomeBase);
     if(!busca){fechar();return;}
-    opcoes=[...new Map(obterValores().filter(Boolean).map(nome=>[norm(nome),nome])).values()]
-      .filter(nome=>norm(nome).includes(busca)&&norm(nome)!==busca)
-      .sort((a,b)=>{
-        const aIni=norm(a).startsWith(busca)?0:1,bIni=norm(b).startsWith(busca)?0:1;
-        return aIni-bIni||a.localeCompare(b,'pt-BR');
-      }).slice(0,8).map(nome=>formatarNomeCarta(nome,eFuncionario&&nomeDigitado.falta));
-    if(!opcoes.length){fechar();return;}
+    if(eFuncionario) {
+      const todos=colaboradoresParaSugestaoCarta();
+      const exatos=todos.filter(f=>norm(f.nome)===busca);
+      opcoes=todos.filter(f=>(norm(f.nome).includes(busca)||norm(f.empresa+' '+f.nome).includes(busca))&&
+        (norm(f.nome)!==busca||exatos.length>1))
+        .sort((a,b)=>(norm(a.nome).startsWith(busca)?0:1)-(norm(b.nome).startsWith(busca)?0:1)||
+          a.nome.localeCompare(b.nome,'pt-BR')||a.empresa.localeCompare(b.empresa,'pt-BR'))
+        .slice(0,8);
+      if(!opcoes.length){fechar();return;}
+      lista.innerHTML=opcoes.map((f,i)=>`<div class="carta-sugestao-item" id="${idLista}-op-${i}" role="option" aria-selected="${i===0}" data-index="${i}"><strong style="display:inline-block;margin-right:12px;vertical-align:middle;">${esc(f.nome)}</strong><small style="display:inline-block;vertical-align:middle;color:#5f6f86;font-weight:600;letter-spacing:.01em;">${esc(f.empresa)}</small></div>`).join('');
+    } else {
+      opcoes=[...new Map(obterValores().filter(Boolean).map(nome=>[norm(nome),nome])).values()]
+        .filter(nome=>norm(nome).includes(busca)&&norm(nome)!==busca)
+        .sort((a,b)=>(norm(a).startsWith(busca)?0:1)-(norm(b).startsWith(busca)?0:1)||a.localeCompare(b,'pt-BR'))
+        .slice(0,8);
+      if(!opcoes.length){fechar();return;}
+      lista.innerHTML=opcoes.map((nome,i)=>`<div class="carta-sugestao-item" id="${idLista}-op-${i}" role="option" aria-selected="${i===0}" data-index="${i}">${esc(nome)}</div>`).join('');
+    }
     indice=0;
-    lista.innerHTML=opcoes.map((nome,i)=>`<div class="carta-sugestao-item" id="${idLista}-op-${i}" role="option" aria-selected="${i===0}" data-index="${i}">${esc(nome)}</div>`).join('');
     lista.hidden=false;campo.setAttribute('aria-expanded','true');marcarAtiva();
   }
-  campo.addEventListener('input',atualizar);
+  campo.addEventListener('input',e=>{
+    // Ao alterar o nome manualmente, remover vínculo com sugestão anterior.
+    if(eFuncionario&&e.isTrusted)funcionarioCartaSelecionado=null;
+    atualizar();
+  });
   campo.addEventListener('focus',atualizar);
   campo.addEventListener('keydown',e=>{
     if(e.isComposing||e.key==='Process')return;
@@ -2118,6 +2324,8 @@ function registrarEventos() {
   $('form-folga').addEventListener('submit',e=>{e.preventDefault();comBotaoCarregando($('salvar-folga'),()=>salvarFolga(e),'Salvando folga…');});
   $('filtro-folga-status').addEventListener('change',renderFolgas);
   $('filtro-controle-enc').addEventListener('change',renderPendentes);
+  $('busca-cartas-pendentes').addEventListener('input',renderPendentes);
+  $('ordenar-cartas-pendentes').addEventListener('change',renderPendentes);
   $('form-carta').addEventListener('submit',e=>{e.preventDefault();if(APP.cartaEditando)comBotaoCarregando($('btn-salvar-carta'),()=>salvarCarta(e),'Salvando alterações…');else salvarCarta(e);});
   ['filtro-cartas','filtro-cartas-status','filtro-cartas-mes'].forEach(id=>$(id).addEventListener(id==='filtro-cartas'?'input':'change',renderCartas));
   $('limpar-filtro-cartas').addEventListener('click',()=>{$('filtro-cartas').value='';$('filtro-cartas-status').value='';$('filtro-cartas-mes').value='';renderCartas();});
@@ -2444,8 +2652,11 @@ function ebImprimir(){
   `;
   const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Banco de horas — '+
     esc(periodo)+'</title><style>'+cssImpressao+'</style></head><body>'+demonstrativos+'</body></html>';
+  popup.addEventListener('afterprint',()=>{
+    setTimeout(()=>{if(!popup.closed)popup.close();},120);
+  },{once:true});
   popup.document.open();popup.document.write(html);popup.document.close();popup.focus();
-  setTimeout(()=>popup.print(),400);
+  setTimeout(()=>{if(!popup.closed)popup.print();},400);
 }
 function configurarBancoHorasUI(){
   for(const id of ['eb-ano-inicial','eb-ano-final']){
