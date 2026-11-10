@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
   <title>Gestão de Ponto | Transmarina</title>
-  <link rel="stylesheet" href="ponto.css?v=31.5">
+  <link rel="stylesheet" href="ponto.css?v=31.12.1">
 </head>
 <body>
   <div class="modal-overlay" id="modal-login" aria-modal="true" role="dialog">
@@ -41,7 +41,6 @@
             <label for="recuperar-codigo">Código recebido (6 dígitos)</label>
             <input id="recuperar-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
             <label for="recuperar-senha">Nova senha (mínimo de 8 caracteres)</label>
-            <p class="tm-auth-info">Use maiúscula, minúscula, número e símbolo (ex.: !, @ ou #).</p>
             <div class="tm-senha-campo">
               <input id="recuperar-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
               <button type="button" class="tm-mostrar-senha" data-olho="recuperar-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
@@ -71,7 +70,6 @@
             <input id="cadastro-cpf" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" required>
             <p class="tm-auth-dica">O nome e o CPF precisam conferir com o cadastro de funcionários do MobPonto. Seu usuário será gerado automaticamente, como Joao.417427.</p>
             <label for="cadastro-senha">Criar senha (mínimo de 8 caracteres)</label>
-            <p class="tm-auth-info">Use maiúscula, minúscula, número e símbolo (ex.: !, @ ou #).</p>
             <div class="tm-senha-campo">
               <input id="cadastro-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
               <button type="button" class="tm-mostrar-senha" data-olho="cadastro-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
@@ -182,6 +180,7 @@
         </section>
 
         <section id="sec-cartas" class="page">
+          <div class="section-header"><div><h2>Cartas de ponto</h2><p>Controle de entrega, correção e assinatura inspirado no arquivo Excel.</p></div></div>
           <nav class="subnav" aria-label="Subabas de cartas de ponto"><button class="subnav-btn active" data-sub="controle">Controle de cartas</button><button class="subnav-btn" data-sub="capa">Capa e impressão</button><button class="subnav-btn" data-sub="relatorios">Ranking e gráficos</button><button class="subnav-btn" data-sub="resumo">Resumo para o grupo</button><button class="subnav-btn" data-sub="banco">Banco de Horas</button></nav>
 
           <div class="subpage active" id="sub-controle">
@@ -272,16 +271,41 @@
                 <button id="eb-csv" class="btn secondary" type="button" disabled>Exportar CSV</button>
                 <button id="eb-imprimir" class="btn secondary" type="button" disabled>Imprimir / PDF</button>
               </div>
-              <p class="footnote">Para competências fechadas, o demonstrativo mostra a <b>primeira leitura válida arquivada</b>, sem substituí-la pelo saldo zerado posteriormente. Isso <b>não garante</b> um valor anterior a compensações feitas antes da primeira captura. A tela Horas Extras segue mostrando os saldos atuais, após abatimentos. Este extrato é histórico e <b>não informa horas disponíveis para novas folgas</b>. Meses sem leitura aparecem como <b>SEM DADOS</b>. Até 6 anos por consulta, sem iniciar novas capturas.</p>
+              <p class="footnote">A consulta utiliza os dados registrados nas leituras do MobPonto e a sincronização mais recente. Não faz abatimentos ou pagamentos. Os meses sem leitura aparecerão como <b>SEM DADOS</b>. Selecione até 6 anos consecutivos; a consulta não inicia uma nova captura do MobPonto.</p>
             </div>
             <div id="eb-estado" class="eb-estado" role="status" aria-live="polite">Selecione os funcionários e clique em Carregar bancos de horas.</div>
             <div id="eb-resultados" class="eb-resultados" aria-live="polite"></div>
           </div>
         </section>
 
-
-        <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Controle de cartas do encarregado</h2><p>Marque as assinaturas recebidas ou solicite reimpressão. As ações são registradas separadamente e não alteram o histórico do administrador.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div>
-          <div class="panel"><div class="tm-pendentes-filtros"><label for="filtro-controle-enc">Exibir cartas</label><select id="filtro-controle-enc"><option value="PENDENTE">Ainda pendentes / reimpressão</option><option value="ASSINADA">Assinadas</option><option value="TODAS">Todas</option></select></div><div id="lista-pendentes" class="pending-list"></div></div></section>
+        <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Controle de cartas do encarregado</h2><p id="descricao-cartas-pendentes">Registre assinaturas e pedidos de reimpressão para seu controle. Somente o administrador confirma ou altera as cartas oficiais.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div>
+          <div class="panel">
+            <div class="tm-pendentes-filtros tm-pendentes-filtros-v2" role="search" aria-label="Pesquisar e ordenar cartas de ponto">
+              <div class="tm-pendente-campo tm-pendente-busca">
+                <label for="busca-cartas-pendentes">Buscar por nome</label>
+                <div class="tm-pendente-busca-caixa">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                  <input id="busca-cartas-pendentes" type="search" placeholder="Digite o nome do colaborador" autocomplete="off" aria-controls="lista-pendentes">
+                </div>
+              </div>
+              <div class="tm-pendente-campo tm-pendente-status">
+                <label for="filtro-controle-enc">Exibir cartas</label>
+                <select id="filtro-controle-enc"><option value="PENDENTE">Ainda pendentes / reimpressão</option><option value="ASSINADA">Assinadas</option><option value="TODAS">Todas</option></select>
+              </div>
+              <div class="tm-pendente-campo tm-pendente-ordem">
+                <label for="ordenar-cartas-pendentes">Ordenar por</label>
+                <select id="ordenar-cartas-pendentes">
+                  <option value="DATA_ASC">Data: mais antiga primeiro</option>
+                  <option value="DATA_DESC">Data: mais nova primeiro</option>
+                  <option value="NOME_ASC">Nome: A–Z</option>
+                  <option value="NOME_DESC">Nome: Z–A</option>
+                </select>
+              </div>
+            </div>
+            <p class="tm-pendentes-contador" id="contador-cartas-pendentes" aria-live="polite" aria-atomic="true"></p>
+            <div id="lista-pendentes" class="pending-list"></div>
+          </div>
+        </section>
         <section id="sec-usuarios" class="page" data-admin aria-labelledby="titulo-usuarios">
           <div class="section-header">
             <div><h2 id="titulo-usuarios" class="sr-only">Gerenciar usuários</h2><p>Os cadastros só recebem acesso após a confirmação do e-mail e sua aprovação.</p></div>
@@ -308,6 +332,6 @@
       </main>
     </div>
   </div>
-  <script src="ponto.js?v=31.6"></script>
+  <script src="ponto.js?v=31.12.3"></script>
 </body>
 </html>
