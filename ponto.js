@@ -2509,7 +2509,8 @@ function ebTabelaHTML(extrato){
     // Avisos de auditoria não integram o demonstrativo apresentado/impresso.
     // As versões e a indicação houveAlteracao continuam preservadas no backend.
     return '<tr><td>'+esc(mes)+'</td>'+campos.map(c=>'<td class="'+ebClasseSaldo(r[c])+'">'+esc(r[c]||'SEM DADOS')+'</td>').join('')+
-      '<td class="'+(r.anotacao?'':'eb-anotacao-vazia')+'">'+esc(r.anotacao||'Não informada pela API')+'</td></tr>';
+      '<td class="'+(r.anotacao?'':'eb-anotacao-vazia')+'"'+(r.anotacaoCapturadaEm?
+      ' title="Anotação arquivada em '+esc(ebDataLeitura(r.anotacaoCapturadaEm))+'"':'')+'>'+esc(r.anotacao||'Sem anotação arquivada')+'</td></tr>';
   }).join('');
   const soma=['previsto','trabalhado','extra','extraFds','adn','saldo'].map((c,i)=>'<td>'+esc(ebSomarCampo(extrato.meses,c,i>=2&&i!==4))+'</td>').join('');
   const parciais=extrato.meses.some(r=>['previsto','trabalhado','extra','extraFds','adn','saldo'].some(k=>ebMinutos(r[k])===null));
@@ -2536,7 +2537,7 @@ async function ebCarregar(){
     $('eb-estado').textContent=EB.extratos.length+' extrato(s) carregado(s) — '+
       (anoInicial===anoFinal?anoInicial:anoInicial+'–'+anoFinal)+'. '+
       (mesesSem?mesesSem+' competência(s) sem leitura. ':'')+
-      'Meses fechados usam a primeira leitura arquivada. Anotações aparecem somente quando retornadas pela API.';
+      'Horas de meses fechados são preservadas da primeira leitura. Anotações exibem a última informação arquivada de cada mês.';
     $('eb-csv').disabled=!EB.extratos.length;$('eb-imprimir').disabled=!EB.extratos.length;
   }catch(e){$('eb-estado').textContent='Não foi possível carregar: '+e.message;throw e;}
   return true;
@@ -2545,11 +2546,11 @@ function ebCSV(){
   if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
   const colunas=['Empresa','Funcionário','Ano','Mês/Ano','Horas a trabalhar','Horas trabalhadas','Extra Seg-Sáb',
     'Extra Dom/Fer','Adicional noturno','Saldo de referência histórica','Anotação','Situação',
-    'Fonte','Data da primeira leitura','Extra Seg-Sáb na última leitura','Saldo na última leitura','Alteração após referência','Tipo de referência'];
+    'Fonte','Data da primeira leitura','Extra Seg-Sáb na última leitura','Saldo na última leitura','Alteração após referência','Tipo de referência', 'Anotação arquivada em', 'Origem da anotação'];
   const linhas=[colunas];
   EB.extratos.forEach(e=>e.meses.forEach(r=>linhas.push([e.empresa,e.nome,r.mes.slice(3),r.mes,r.previsto,r.trabalhado,
-    r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Não informada pela API',r.situacao,r.origem,
-    r.referenciaEm||'',r.extraAtual||'',r.saldoAtual||'',r.houveAlteracao?'SIM':'NÃO',r.modoLeitura||'SEM LEITURA'])));
+    r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Sem anotação arquivada',r.situacao,r.origem,
+    r.referenciaEm||'',r.extraAtual||'',r.saldoAtual||'',r.houveAlteracao?'SIM':'NÃO',r.modoLeitura||'SEM LEITURA',r.anotacaoCapturadaEm||'',r.anotacaoOrigem||''])));
   const txt='\ufeffsep=;\r\n'+linhas.map(r=>r.map(ebCSVSeguro).join(';')).join('\r\n');
   const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
     EB.resultado.anoInicial+'-'+EB.resultado.anoFinal;
