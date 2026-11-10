@@ -293,6 +293,18 @@ async function operacaoAcesso(botao,executar) {
     mensagemAcesso(modo,e.message||'Não foi possível concluir a solicitação.',true);
   }finally{botao.disabled=false;botao.textContent=original;}
 }
+// Política do formulário: o backend sempre valida novamente (_senhaForte).
+function erroSenhaNova(senha) {
+  if(typeof senha!=='string'||senha.length<8||senha.length>128||/[\r\n]/.test(senha))
+    return 'A senha deve ter entre 8 e 128 caracteres.';
+  if(!/[A-Z]/.test(senha))return 'Inclua pelo menos uma letra maiúscula.';
+  if(!/[a-z]/.test(senha))return 'Inclua pelo menos uma letra minúscula.';
+  if(!/[0-9]/.test(senha))return 'Inclua pelo menos um número.';
+  if(!/[^\p{L}\p{N}\s]/u.test(senha))
+    return 'Inclua pelo menos um símbolo, como !, @, # ou $.';
+  return '';
+}
+
 function ligarOlhosDeSenha() {
   document.querySelectorAll('[data-olho]').forEach(botao=>botao.addEventListener('click',()=>{
     const campo=$(botao.dataset.olho),revelar=campo.type==='password';
@@ -331,6 +343,8 @@ function configurarAcessoEmail(){
   });
   $('form-recuperar').addEventListener('submit',e=>{
     e.preventDefault();
+    const erroSenha=erroSenhaNova($('recuperar-senha').value);
+    if(erroSenha){mensagemAcesso('recuperar',erroSenha,true);return;}
     if($('recuperar-senha').value!==$('recuperar-confirmar').value){
       mensagemAcesso('recuperar','As senhas informadas não são iguais.',true);return;
     }
@@ -365,6 +379,8 @@ function configurarAcessoEmail(){
   });
   $('form-cadastro').addEventListener('submit',e=>{
     e.preventDefault();
+    const erroSenha=erroSenhaNova($('cadastro-senha').value);
+    if(erroSenha){mensagemAcesso('cadastro',erroSenha,true);return;}
     if($('cadastro-senha').value!==$('cadastro-confirmar').value){
       mensagemAcesso('cadastro','As senhas informadas não são iguais.',true);return;
     }
@@ -2274,23 +2290,26 @@ function ebSomarCampo(meses,campo,sinal){
   return ebFormatarMinutos(valores.reduce((a,b)=>a+b,0),sinal);
 }
 function ebClasseSaldo(s){return s.startsWith('-')?'eb-negativo':s.startsWith('+')?'eb-positivo':s==='SEM DADOS'?'eb-sem-dados':'';}
+function ebDataLeitura(valor){
+  const m=String(valor||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?m[3]+'/'+m[2]+'/'+m[1]:String(valor||'');
+}
 function ebTabelaHTML(extrato){
   const linhas=extrato.meses.map(r=>{
     const mes=EB_MESES[Number(r.mes.slice(0,2))-1]+'/'+r.mes.slice(3);
     const campos=['previsto','trabalhado','extra','extraFds','adn','saldo'];
+    // Avisos de auditoria não integram o demonstrativo apresentado/impresso.
+    // As versões e a indicação houveAlteracao continuam preservadas no backend.
     return '<tr><td>'+esc(mes)+'</td>'+campos.map(c=>'<td class="'+ebClasseSaldo(r[c])+'">'+esc(r[c]||'SEM DADOS')+'</td>').join('')+
       '<td class="'+(r.anotacao?'':'eb-anotacao-vazia')+'">'+esc(r.anotacao||'Não informada pela API')+'</td></tr>';
   }).join('');
   const soma=['previsto','trabalhado','extra','extraFds','adn','saldo'].map((c,i)=>'<td>'+esc(ebSomarCampo(extrato.meses,c,i>=2&&i!==4))+'</td>').join('');
-  const faltantes=extrato.meses.filter(r=>r.situacao==='SEM LEITURA').length;
   const parciais=extrato.meses.some(r=>['previsto','trabalhado','extra','extraFds','adn','saldo'].some(k=>ebMinutos(r[k])===null));
-  return '<article class="eb-extrato"><header><div><span class="eb-kicker">TRANSMARINA / BANCO DE HORAS</span><h4>'+esc(extrato.nome)+
+  return '<article class="eb-extrato"><header><div><span class="eb-kicker">TRANSMARINA / BANCO DE HORAS — REFERÊNCIA HISTÓRICA</span><h4>'+esc(extrato.nome)+
     '</h4><span class="eb-empresa">'+esc(extrato.empresa)+'</span></div><span class="eb-etiqueta">Período '+
     esc(extrato.anoInicial===extrato.anoFinal?String(extrato.anoInicial):extrato.anoInicial+'–'+extrato.anoFinal)+'</span></header>'+
     '<div class="eb-tabela-wrap"><table class="eb-tabela"><thead><tr><th>Mês/Ano</th><th>Horas a trabalhar<br>no mês</th><th>Horas<br>trabalhadas</th><th>Extra<br>Seg–Sáb</th><th>Extra<br>Dom/Fer</th><th>Adicional<br>noturno</th><th>Saldo<br>banco</th><th>Anotação</th></tr></thead><tbody>'+linhas+
-    '<tr class="eb-total"><td>TOTAL'+(parciais?' (parcial)':'')+'</td>'+soma+'<td>—</td></tr></tbody></table></div><p class="eb-nota">'+
-    (faltantes?faltantes+' mês(es) sem leitura; os totais dependentes desses meses são omitidos. ':'')+
-    'Dados auxiliares extraídos das leituras da API, não substituem o demonstrativo oficial. O mês atual pode estar incompleto.</p></article>';
+    '<tr class="eb-total"><td>SOMA DO HISTÓRICO'+(parciais?' (parcial)':'')+'</td>'+soma+'<td>—</td></tr></tbody></table></div></article>';
 }
 async function ebCarregar(){
   const emp=$('eb-empresa').value;
@@ -2309,7 +2328,7 @@ async function ebCarregar(){
     $('eb-estado').textContent=EB.extratos.length+' extrato(s) carregado(s) — '+
       (anoInicial===anoFinal?anoInicial:anoInicial+'–'+anoFinal)+'. '+
       (mesesSem?mesesSem+' competência(s) sem leitura. ':'')+
-      'As anotações aparecem somente quando retornadas pela API.';
+      'Meses fechados usam a primeira leitura arquivada. Anotações aparecem somente quando retornadas pela API.';
     $('eb-csv').disabled=!EB.extratos.length;$('eb-imprimir').disabled=!EB.extratos.length;
   }catch(e){$('eb-estado').textContent='Não foi possível carregar: '+e.message;throw e;}
   return true;
@@ -2317,14 +2336,16 @@ async function ebCarregar(){
 function ebCSV(){
   if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
   const colunas=['Empresa','Funcionário','Ano','Mês/Ano','Horas a trabalhar','Horas trabalhadas','Extra Seg-Sáb',
-    'Extra Dom/Fer','Adicional noturno','Saldo banco','Anotação','Situação','Fonte'];
+    'Extra Dom/Fer','Adicional noturno','Saldo de referência histórica','Anotação','Situação',
+    'Fonte','Data da primeira leitura','Extra Seg-Sáb na última leitura','Saldo na última leitura','Alteração após referência','Tipo de referência'];
   const linhas=[colunas];
   EB.extratos.forEach(e=>e.meses.forEach(r=>linhas.push([e.empresa,e.nome,r.mes.slice(3),r.mes,r.previsto,r.trabalhado,
-    r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Não informada pela API',r.situacao,r.origem])));
+    r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Não informada pela API',r.situacao,r.origem,
+    r.referenciaEm||'',r.extraAtual||'',r.saldoAtual||'',r.houveAlteracao?'SIM':'NÃO',r.modoLeitura||'SEM LEITURA'])));
   const txt='\ufeffsep=;\r\n'+linhas.map(r=>r.map(ebCSVSeguro).join(';')).join('\r\n');
   const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
     EB.resultado.anoInicial+'-'+EB.resultado.anoFinal;
-  const nome='Transmarina_Extratos_Banco_'+periodo+'.csv';
+  const nome='Transmarina_Extratos_Banco_Historico_'+periodo+'.csv';
   const blob=new Blob([txt],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download=nome;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
@@ -2333,13 +2354,96 @@ function ebCSVSeguro(valor){
   if(/^[=+@\-\t\r]/.test(s))s="'"+s;
   return '"'+s.replace(/"/g,'""')+'"';
 }
+// Metadados de procedência para a impressão. A referência é a primeira
+// captura disponível de cada competência, não necessariamente pré-abatimento.
+function ebIntervaloCapturas(extratos){
+  const datas=extratos.flatMap(e=>(e.meses||[])
+    .map(m=>String(m.referenciaEm||'').trim())
+    .filter(d=>/^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?$/.test(d)))
+    .sort();
+  if(!datas.length)return 'Sem data de leitura arquivada disponível';
+  const inicio=ebDataLeitura(datas[0]),fim=ebDataLeitura(datas[datas.length-1]);
+  return inicio===fim?inicio:inicio+' a '+fim;
+}
 function ebImprimir(){
   if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
   const popup=window.open('','_blank');if(!popup)throw Error('Permita pop-ups para imprimir os extratos.');
   const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
     EB.resultado.anoInicial+'–'+EB.resultado.anoFinal;
-  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Banco de horas — '+esc(periodo)+'</title><style>'+
-    'body{font:12px Arial,sans-serif;color:#243547;margin:16px}article{page-break-after:always;margin-bottom:20px}header{display:flex;justify-content:space-between;align-items:center}h4{font-size:18px;margin:3px 0}span{font-size:11px}table{border-collapse:collapse;width:100%;font-size:10px;margin-top:10px}th,td{border:1px solid #bec8d2;padding:6px;text-align:center}th{background:#c2cbd5}td:first-child,td:last-child{text-align:left}tr:nth-child(even) td{background:#edf0f4}.eb-total td{background:#d7e1ef!important;font-weight:bold}.eb-nota{font-size:10px;color:#687991}.eb-etiqueta{font-weight:bold}@page{size:A4 landscape;margin:12mm}</style></head><body>'+EB.extratos.map(ebTabelaHTML).join('')+'</body></html>';
+  const emitidoEm=new Intl.DateTimeFormat('pt-BR',{
+    timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',
+    hour:'2-digit',minute:'2-digit',hour12:false
+  }).format(new Date());
+  // Cada funcionário recebe o próprio rodapé logo após sua tabela.
+  // Não há aviso técnico, nem rodapé fixo que empurre o conteúdo à página seguinte.
+  const demonstrativos=EB.extratos.map(extrato=>{
+    const leitura=ebIntervaloCapturas([extrato]);
+    const semLeitura=(extrato.meses||[]).filter(m=>m.situacao==='SEM LEITURA').length;
+    const rodape='<footer class="eb-rodape-fonte">'+
+      '<div><strong>Fonte dos dados: API do MobPonto — Sistema de Controle de Jornada.</strong> ' +
+      'Demonstrativo histórico produzido pelo GESTÃO PONTO — Transmarina (controle interno).</div>'+ 
+      '<div>Leituras arquivadas utilizadas: '+esc(leitura)+
+      ' &nbsp;|&nbsp; Emitido em: '+esc(emitidoEm)+' (Brasília)'+
+      (semLeitura?' &nbsp;|&nbsp; <strong>'+semLeitura+' competência(s) sem leitura; total parcial.</strong>':'')+
+      '</div></footer>';
+    return ebTabelaHTML(extrato).replace('</article>',rodape+'</article>');
+  }).join('');
+  // A janela criada pelo navegador não recebe o ponto.css do site.
+  // Manter os estilos de impressão neste bloco para funcionar no GitHub Pages.
+  const cssImpressao=`
+    @page { size: A4 portrait; margin: 9mm 8mm 10mm; }
+    *,*::before,*::after { box-sizing: border-box; }
+    html,body { padding:0; margin:0; width:100%; }
+    body { font: 10px/1.25 Arial,sans-serif; color:#172d40; }
+    article.eb-extrato { margin:0; padding:0; border:0; box-shadow:none;
+      break-after:page; page-break-after:always; }
+    article.eb-extrato:last-of-type { break-after:auto; page-break-after:auto; }
+    article.eb-extrato>header { display:flex; align-items:flex-start;
+      justify-content:space-between; gap:6px; margin:0 0 5px; padding:0; }
+    .eb-kicker { font-size:9px; letter-spacing:.15px; font-weight:800; }
+    h4 { font-size:16px; line-height:1.1; margin:2px 0; }
+    .eb-empresa { display:block; font-size:10px; line-height:1.2; }
+    .eb-etiqueta { font-size:10px; font-weight:800; white-space:nowrap; }
+    .eb-tabela-wrap { overflow:visible; width:100%; }
+    table.eb-tabela { width:100%; max-width:100%; min-width:0; table-layout:fixed;
+      border-collapse:collapse; border-spacing:0; margin:0; font-variant-numeric:tabular-nums; }
+    .eb-tabela thead { display:table-header-group; }
+    .eb-tabela tr { break-inside:avoid; page-break-inside:avoid; }
+    .eb-tabela th,.eb-tabela td { border:1px solid #b3c2d1; padding:4px 3px;
+      text-align:center; line-height:1.22; vertical-align:middle; overflow-wrap:anywhere; }
+    .eb-tabela th { background:#aec5d8 !important; color:#17334e; font-size:9px; font-weight:800; }
+    .eb-tabela td { background:#f4f8fc !important; font-size:10px; color:#172d40; font-weight:700; }
+    .eb-tabela tr:nth-child(even) td { background:#dfeaf4 !important; }
+    .eb-tabela td:first-child,.eb-tabela td:last-child { text-align:left; }
+    .eb-tabela th:nth-child(1),.eb-tabela td:nth-child(1) { width:16%; }
+    .eb-tabela th:nth-child(2),.eb-tabela td:nth-child(2) { width:12%; }
+    .eb-tabela th:nth-child(3),.eb-tabela td:nth-child(3) { width:12%; }
+    .eb-tabela th:nth-child(4),.eb-tabela td:nth-child(4) { width:10%; }
+    .eb-tabela th:nth-child(5),.eb-tabela td:nth-child(5) { width:10%; }
+    .eb-tabela th:nth-child(6),.eb-tabela td:nth-child(6) { width:10%; }
+    .eb-tabela th:nth-child(7),.eb-tabela td:nth-child(7) { width:10%; }
+    .eb-tabela th:nth-child(8),.eb-tabela td:nth-child(8) { width:20%; }
+    .eb-tabela .eb-total td { background:#c5d9e9 !important; font-weight:900; border-top:1.5px solid #214e73; }
+    .eb-tabela .eb-positivo { color:#145a41; font-weight:900; }
+    .eb-tabela .eb-negativo { color:#962d2d; font-weight:900; }
+    .eb-tabela .eb-sem-dados,.eb-tabela .eb-anotacao-vazia { color:#576a7d; font-weight:600; font-style:italic; }
+    /* Rodapé integra cada demonstrativo, sem posição fixa nem reserva excessiva. */
+    .eb-rodape-fonte { margin:2px 0 0; padding:5px 6px 4px;
+      border:1px solid #b3c2d1; border-top:2px solid #214e73;
+      background:#eaf1f7 !important; color:#2c4359; font-size:8.5px; line-height:1.3;
+      break-inside:avoid; page-break-inside:avoid; }
+    .eb-rodape-fonte div + div { margin-top:2px; }
+    .eb-rodape-fonte strong { font-weight:800; }
+    @media print {
+      body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    }
+    @media screen {
+      body { padding:10mm; max-width:900px; margin:0 auto; }
+      article.eb-extrato { margin-bottom:15mm; }
+    }
+  `;
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Banco de horas — '+
+    esc(periodo)+'</title><style>'+cssImpressao+'</style></head><body>'+demonstrativos+'</body></html>';
   popup.document.open();popup.document.write(html);popup.document.close();popup.focus();
   setTimeout(()=>popup.print(),400);
 }
