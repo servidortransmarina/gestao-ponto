@@ -40,15 +40,16 @@
           <div id="recuperar-etapa2" hidden>
             <label for="recuperar-codigo">Código recebido (6 dígitos)</label>
             <input id="recuperar-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
-            <label for="recuperar-senha">Nova senha (mínimo de 12 caracteres)</label>
+            <label for="recuperar-senha">Nova senha (mínimo de 8 caracteres)</label>
+            <p class="tm-auth-info">Use maiúscula, minúscula, número e símbolo (ex.: !, @ ou #).</p>
             <div class="tm-senha-campo">
-              <input id="recuperar-senha" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+              <input id="recuperar-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
               <button type="button" class="tm-mostrar-senha" data-olho="recuperar-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
             <label for="recuperar-confirmar">Confirmar nova senha</label>
-            <input id="recuperar-confirmar" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+            <input id="recuperar-confirmar" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
             <button type="submit" class="btn primary full" id="recuperar-confirmar-botao">Redefinir senha</button>
           </div>
           <p class="tm-auth-info" id="recuperar-info" hidden role="status" aria-live="polite"></p>
@@ -69,15 +70,16 @@
             <label for="cadastro-cpf">CPF do funcionário</label>
             <input id="cadastro-cpf" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" required>
             <p class="tm-auth-dica">O nome e o CPF precisam conferir com o cadastro de funcionários do MobPonto. Seu usuário será gerado automaticamente, como Joao.417427.</p>
-            <label for="cadastro-senha">Criar senha (mínimo de 12 caracteres)</label>
+            <label for="cadastro-senha">Criar senha (mínimo de 8 caracteres)</label>
+            <p class="tm-auth-info">Use maiúscula, minúscula, número e símbolo (ex.: !, @ ou #).</p>
             <div class="tm-senha-campo">
-              <input id="cadastro-senha" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+              <input id="cadastro-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
               <button type="button" class="tm-mostrar-senha" data-olho="cadastro-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
             <label for="cadastro-confirmar">Confirmar senha</label>
-            <input id="cadastro-confirmar" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+            <input id="cadastro-confirmar" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
             <button type="submit" class="btn primary full" id="cadastro-confirmar-botao">Solicitar acesso</button>
           </div>
           <p class="tm-auth-info" id="cadastro-info" hidden role="status" aria-live="polite"></p>
@@ -270,7 +272,7 @@
                 <button id="eb-csv" class="btn secondary" type="button" disabled>Exportar CSV</button>
                 <button id="eb-imprimir" class="btn secondary" type="button" disabled>Imprimir / PDF</button>
               </div>
-              <p class="footnote">A consulta utiliza os dados registrados nas leituras do MobPonto e a sincronização mais recente. Não faz abatimentos ou pagamentos. Os meses sem leitura aparecerão como <b>SEM DADOS</b>. Selecione até 6 anos consecutivos; a consulta não inicia uma nova captura do MobPonto.</p>
+              <p class="footnote">Para competências fechadas, o demonstrativo mostra a <b>primeira leitura válida arquivada</b>, sem substituí-la pelo saldo zerado posteriormente. Isso <b>não garante</b> um valor anterior a compensações feitas antes da primeira captura. A tela Horas Extras segue mostrando os saldos atuais, após abatimentos. Este extrato é histórico e <b>não informa horas disponíveis para novas folgas</b>. Meses sem leitura aparecem como <b>SEM DADOS</b>. Até 6 anos por consulta, sem iniciar novas capturas.</p>
             </div>
             <div id="eb-estado" class="eb-estado" role="status" aria-live="polite">Selecione os funcionários e clique em Carregar bancos de horas.</div>
             <div id="eb-resultados" class="eb-resultados" aria-live="polite"></div>
