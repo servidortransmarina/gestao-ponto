@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#1f4e78">
+  <title>Gestão de Ponto | Transmarina</title>
+  <link rel="stylesheet" href="ponto.css?v=31.12.1">
+</head>
+<body>
+  <div class="modal-overlay" id="modal-login" aria-modal="true" role="dialog">
+    <div class="login-card">
+      <div class="login-brand"><img src="logotrm.png" alt="Transmarina" onerror="this.style.display='none'"><div><strong>GESTÃO DE PONTO</strong><small>Transmarina • Acesso restrito</small></div></div>
+      <h1 id="auth-titulo">Bem-vindo de volta</h1>
+      <p id="auth-subtitulo">Entre com seu usuário e senha para acessar seu painel.</p>
+      <section id="auth-painel-login" aria-label="Acessar conta">
+        <form id="form-login">
+          <label for="login-usuario">Usuário</label>
+          <input id="login-usuario" name="username" autocomplete="username" required>
+          <label for="login-senha">Senha</label>
+          <div class="tm-senha-campo">
+            <input id="login-senha" type="password" autocomplete="current-password" required>
+            <button type="button" class="tm-mostrar-senha" data-olho="login-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <p class="error" id="login-erro" hidden role="alert"></p>
+          <button class="btn primary full" type="submit" id="botao-login">Entrar no sistema</button>
+        </form>
+        <div class="tm-auth-links">
+          <button type="button" class="tm-auth-link" id="auth-abrir-recuperar">Esqueceu a senha?</button>
+          <button type="button" class="tm-auth-link" id="auth-abrir-cadastro">Criar uma conta</button>
+        </div>
+      </section>
+      <section id="auth-painel-recuperar" aria-label="Recuperar senha" hidden>
+        <form id="form-recuperar">
+          <label for="recuperar-email">E-mail cadastrado</label>
+          <input id="recuperar-email" type="email" autocomplete="email" maxlength="254" placeholder="seuemail@empresa.com" required>
+          <button type="button" class="btn secondary full tm-enviar-codigo" id="recuperar-enviar">Enviar código por e-mail</button>
+          <div id="recuperar-etapa2" hidden>
+            <label for="recuperar-codigo">Código recebido (6 dígitos)</label>
+            <input id="recuperar-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
+            <label for="recuperar-senha">Nova senha (mínimo de 8 caracteres)</label>
+            <div class="tm-senha-campo">
+              <input id="recuperar-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+              <button type="button" class="tm-mostrar-senha" data-olho="recuperar-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <label for="recuperar-confirmar">Confirmar nova senha</label>
+            <input id="recuperar-confirmar" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+            <button type="submit" class="btn primary full" id="recuperar-confirmar-botao">Redefinir senha</button>
+          </div>
+          <p class="tm-auth-info" id="recuperar-info" hidden role="status" aria-live="polite"></p>
+          <p class="error" id="recuperar-erro" hidden role="alert"></p>
+        </form>
+        <button type="button" class="tm-auth-link tm-voltar-login" id="recuperar-voltar">← Voltar para o login</button>
+      </section>
+      <section id="auth-painel-cadastro" aria-label="Criar conta" hidden>
+        <form id="form-cadastro">
+          <label for="cadastro-email">Seu e-mail</label>
+          <input id="cadastro-email" type="email" autocomplete="email" maxlength="254" placeholder="seuemail@empresa.com" required>
+          <button type="button" class="btn secondary full tm-enviar-codigo" id="cadastro-enviar">Enviar código por e-mail</button>
+          <div id="cadastro-etapa2" hidden>
+            <label for="cadastro-codigo">Código recebido (6 dígitos)</label>
+            <input id="cadastro-codigo" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="000000" required>
+            <label for="cadastro-nome">Nome completo</label>
+            <input id="cadastro-nome" autocomplete="name" minlength="3" maxlength="100" required>
+            <label for="cadastro-cpf">CPF do funcionário</label>
+            <input id="cadastro-cpf" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" required>
+            <p class="tm-auth-dica">O nome e o CPF precisam conferir com o cadastro de funcionários do MobPonto. Seu usuário será gerado automaticamente, como Joao.417427.</p>
+            <label for="cadastro-senha">Criar senha (mínimo de 8 caracteres)</label>
+            <div class="tm-senha-campo">
+              <input id="cadastro-senha" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+              <button type="button" class="tm-mostrar-senha" data-olho="cadastro-senha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <label for="cadastro-confirmar">Confirmar senha</label>
+            <input id="cadastro-confirmar" type="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+            <button type="submit" class="btn primary full" id="cadastro-confirmar-botao">Solicitar acesso</button>
+          </div>
+          <p class="tm-auth-info" id="cadastro-info" hidden role="status" aria-live="polite"></p>
+          <p class="error" id="cadastro-erro" hidden role="alert"></p>
+        </form>
+        <div id="cadastro-concluido" class="tm-cadastro-concluido" hidden role="status" aria-live="polite">
+          <strong>Solicitação enviada!</strong>
+          <p>Seu usuário de acesso foi gerado:</p>
+          <div class="tm-usuario-gerado">
+            <input id="cadastro-usuario-gerado" type="text" readonly aria-label="Seu novo usuário">
+            <button type="button" class="btn secondary" id="cadastro-copiar-usuario">Copiar</button>
+          </div>
+          <p>Aguarde a aprovação do administrador. Você também receberá seu usuário por e-mail quando a conta for aprovada.</p>
+          <button type="button" class="btn primary full" id="cadastro-ir-login">Voltar ao login</button>
+        </div>
+        <button type="button" class="tm-auth-link tm-voltar-login" id="cadastro-voltar">← Voltar para o login</button>
+      </section>
+      <p class="login-foot">A sessão termina à meia-noite. Acesso restrito a usuários autorizados.</p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-mensagem" hidden aria-modal="true" role="dialog">
+    <div class="message-card"><div class="message-icon" id="msg-icon">i</div><h2 id="msg-titulo">Aviso</h2><p id="msg-texto"></p><button class="btn primary" id="msg-fechar">Entendi</button></div>
+  </div>
+
+  <!-- Confirmação própria do site: sem alertas do navegador ou textos de auditoria. -->
+  <dialog id="modal-excluir-carta" class="tm-modal-excluir" aria-labelledby="tm-confirma-exclusao-texto">
+    <p id="tm-confirma-exclusao-texto">Certeza que deseja excluir esta carta?</p>
+    <div class="tm-exclusao-acoes">
+      <button id="tm-cancelar-exclusao" type="button" class="btn secondary">Cancelar</button>
+      <button id="tm-confirmar-exclusao" type="button" class="btn tm-btn-danger">Excluir</button>
+    </div>
+  </dialog>
+
+  <dialog id="modal-decisao-usuario" class="tm-modal-excluir" aria-labelledby="tm-pergunta-usuario">
+    <p id="tm-pergunta-usuario">Confirmar esta decisão?</p>
+    <p id="tm-erro-usuario" class="tm-erro-usuario" role="alert" hidden></p>
+    <div class="tm-exclusao-acoes">
+      <button id="tm-cancelar-decisao" type="button" class="btn secondary">Cancelar</button>
+      <button id="tm-confirmar-decisao" type="button" class="btn primary">Confirmar</button>
+    </div>
+  </dialog>
+
+  <div class="shell" id="shell" hidden>
+    <aside class="sidebar">
+      <div class="brand"><img src="logotrm.png" alt="Transmarina" onerror="this.style.display='none'"><div><strong>GESTÃO DE PONTO</strong><small>Painel corporativo</small></div></div>
+      <div class="sidebar-label">GERENCIAMENTO</div>
+      <nav class="main-nav" aria-label="Menu principal">
+        <button class="nav-button active" data-tab="horas"><span class="nav-icon">◷</span> Horas extras</button>
+        <button class="nav-button" data-tab="folgas"><span class="nav-icon">▣</span> Controle de folgas</button>
+        <button class="nav-button" data-tab="cartas" data-admin><span class="nav-icon">▤</span> Cartas de ponto</button>
+        <button class="nav-button" data-tab="pendentes"><span class="nav-icon">✓</span> Cartas pendentes <span id="badge-pendentes" class="count-badge">0</span></button>
+        <button class="nav-button" data-tab="usuarios" data-admin><span class="nav-icon">♙</span> Gerenciar usuários <span id="badge-usuarios" class="count-badge">0</span></button>
+      </nav>
+      <div class="sidebar-bottom"><span id="perfil-tag">Perfil</span><button class="logout" id="btn-sair">Sair da conta</button></div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar"><div><span class="eyebrow">TRANSMARINA / RH E OPERAÇÕES</span><h1 id="titulo-pagina">Supervisão de horas extras</h1></div><div class="topright"><span class="pill" id="data-hoje"></span><span class="avatar" id="avatar">GP</span><span id="usuario-nome" class="username"></span></div></header>
+      <main>
+        <section id="sec-horas" class="page active">
+          <div id="visao-horas-encarregado" class="visao-horas-encarregado" hidden>
+            <div class="section-header"><div><h2>Dias de folga por funcionário</h2><p>Consulta rápida do banco de horas dos últimos três meses, ordenada pelos dias de folga disponíveis.</p></div><button type="button" class="btn secondary" id="enc-recarregar-horas">Atualizar lista</button></div>
+            <div class="panel painel-dias-folga"><label class="sr-only" for="enc-busca-funcionario">Buscar funcionário</label>
+              <input id="enc-busca-funcionario" class="enc-busca-funcionario" type="search" placeholder="Buscar funcionário…" autocomplete="off">
+              <div class="enc-lista-cabecalho"><span>Funcionário</span><span>Dias de folga*</span></div>
+              <div id="enc-lista-folgas" class="enc-lista-folgas" aria-live="polite"><p class="empty">Carregando funcionários…</p></div>
+            </div>
+            <p class="enc-aviso-validacao" role="note">Cálculo dos dias baseado nos saldos da API. <strong>Em validação:</strong> foram encontradas divergências com a planilha de referência; confirme os saldos antes de conceder folgas.</p>
+          </div>
+          <div id="visao-horas-adm" class="visao-horas-adm">
+          <div class="section-header"><div><h2 class="sr-only">Banco de horas — 3 meses</h2><p>Saldos mensais calculados a partir das medidas do MobPonto. Banco móvel = mês atual + dois anteriores. O mês atual pode mudar quando o ponto é corrigido.</p></div><div class="actions"><button class="btn secondary" id="btn-recarregar-horas">Recarregar painel</button><button class="btn primary" id="btn-sincronizar" data-admin>Sincronizar MobPonto</button></div></div>
+          <div id="tm-estado-sincronizacao" class="tm-estado-sincronizacao" role="status" aria-live="polite" data-admin hidden></div>
+          <div class="stat-grid"><div class="stat-card"><span>Funcionários ativos</span><strong id="stat-ativos">—</strong><small>última sincronização</small></div><div class="stat-card"><span>Saldo de banco positivo</span><strong id="stat-positivos">—</strong><small>últimos 3 meses</small></div><div class="stat-card"><span>Horas disponíveis (soma dos positivos)</span><strong id="stat-horas">—</strong><small>não equivale a folgas autorizadas</small></div><div class="stat-card"><span>Última atualização</span><strong class="stat-date" id="stat-atualizacao">—</strong><small>capturada pelo servidor</small></div></div>
+          <div class="panel"><div class="panel-top"><div><h3>Saldo de horas por funcionário</h3><p class="muted" id="periodo-saldos">Período do banco: —</p></div><div class="filter-row"><input id="filtro-horas" type="search" placeholder="Buscar funcionário…" aria-label="Filtrar funcionários"><select id="filtro-empresa-horas" aria-label="Filtrar empresa"><option value="">Todas as empresas</option></select><select id="filtro-saldo"><option value="todos">Todos</option><option value="positivo">Saldo positivo</option><option value="negativo">Saldo negativo</option><option value="zero">Saldo zerado</option><option value="sem-dados">Histórico incompleto</option></select></div></div>
+            <div class="table-scroll" role="region" aria-label="Tabela de saldos mensais com rolagem horizontal" tabindex="0"><table class="tabela-horas tabela-cartoes"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>Funcionário</th><th>Empresa</th><th>Banco 3 meses</th><th id="horas-mes-0">Mês atual</th><th id="horas-mes-1">Mês anterior</th><th id="horas-mes-2">Há 2 meses</th><th>Horas trabalhadas</th><th>Extras normais</th><th>Extras FDS/feriado</th><th>Total extras mês</th><th>Atrasos/faltas</th><th>Adicional noturno</th><th>Planejamento</th></tr></thead><tbody id="tbody-horas"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody></table></div>
+          </div>
+          <p class="footnote"><b>Regra do banco de horas:</b> saldo mensal = horas trabalhadas + extras − horas previstas. No mês em andamento, o corte até ontem depende de jornada compatível e de sincronização antes do expediente. O banco é a soma dos últimos três meses, mas compensações e prescrições ainda não estão validadas; confira a folha antes de autorizar folgas. <b>SEM DADOS</b> indica um ou mais meses sem informação. O botão “Recarregar painel” lê o último resultado salvo; somente a sincronização consulta o MobPonto novamente.</p>
+          </div>
+        </section>
+        <section id="sec-folgas" class="page">
+          <div class="section-header"><div><h2 class="sr-only">Planejamento de folgas</h2><p>Registre a decisão do encarregado. Este controle não lança automaticamente abonos ou compensações no MobPonto.</p></div></div>
+          <div class="two-columns">
+            <div class="panel"><h3>Programar folga</h3><form id="form-folga" class="form-grid">
+              <div class="wide carta-campo-autocomplete">
+                <label for="folga-funcionario">Colaborador</label>
+                <div class="carta-autocomplete-relativo"><input id="folga-funcionario" autocomplete="off" required placeholder="Nome do colaborador" role="combobox" aria-autocomplete="list" aria-controls="folga-sugestoes-funcionario" aria-expanded="false"><div id="folga-sugestoes-funcionario" class="carta-sugestoes" role="listbox" hidden></div></div>
+              </div>
+              <input id="folga-empresa" type="hidden">
+              <p class="wide carta-empresa-identificada carta-empresa-aviso" id="folga-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
+              <label>Data da folga <input id="folga-data" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA" required></label>
+              <label>Horas previstas <input id="folga-horas" type="text" value="07:20" pattern="[0-9]{1,2}:[0-5][0-9]" required placeholder="07:20" inputmode="numeric"></label>
+              <small class="wide carta-dica-data">A data pode ser alterada. Se o ano for digitado como 26, será ajustado para 2026.</small>
+              <label class="wide">Justificativa / observações <textarea id="folga-obs" rows="3" maxlength="500" placeholder="Banco de Horas"></textarea></label>
+              <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="salvar-folga">Registrar planejamento</button></div>
+            </form></div>
+            <div class="panel"><h3>Critérios para avaliação</h3><div class="info-row"><span>01</span><div><b>Conferir o banco de horas compensável</b><p>Horas extras do mês não provam um saldo disponível para folga.</p></div></div><div class="info-row"><span>02</span><div><b>Verificar a escala</b><p>Planeje a folga sem comprometer a cobertura do setor.</p></div></div><div class="info-row"><span>03</span><div><b>Validar a compensação</b><p>Alinhe com RH e política da empresa antes de marcar como concedida.</p></div></div></div>
+          </div>
+          <div class="panel tm-folgas-historico"><div class="panel-top"><h3>Histórico de decisões</h3><select id="filtro-folga-status"><option value="">Todos os status</option><option value="PLANEJADA">Planejadas</option><option value="CONCEDIDA">Concedidas</option><option value="CANCELADA">Canceladas</option></select></div><div class="table-scroll" role="region" aria-label="Histórico de decisões sobre folgas" tabindex="0"><table class="tm-tabela-folgas tabela-cartoes"><colgroup><col class="tm-col-folga-pessoa"><col class="tm-col-folga-data"><col class="tm-col-folga-horas"><col class="tm-col-folga-status"><col class="tm-col-folga-responsavel"><col class="tm-col-folga-obs"><col class="tm-col-folga-acoes"></colgroup><thead><tr><th>Colaborador</th><th>Data</th><th>Horas</th><th>Status</th><th>Responsável</th><th>Observação</th><th class="tm-folga-acoes-titulo">Ações</th></tr></thead><tbody id="tbody-folgas"></tbody></table></div></div>
+        </section>
+
+        <section id="sec-cartas" class="page">
+          <div class="section-header"><div><h2>Cartas de ponto</h2><p>Controle de entrega, correção e assinatura inspirado no arquivo Excel.</p></div></div>
+          <nav class="subnav" aria-label="Subabas de cartas de ponto"><button class="subnav-btn active" data-sub="controle">Controle de cartas</button><button class="subnav-btn" data-sub="capa">Capa e impressão</button><button class="subnav-btn" data-sub="relatorios">Ranking e gráficos</button><button class="subnav-btn" data-sub="resumo">Resumo para o grupo</button><button class="subnav-btn" data-sub="banco">Banco de Horas</button></nav>
+
+          <div class="subpage active" id="sub-controle">
+            <div class="two-columns">
+              <div class="panel"><h3 id="titulo-form-carta">Registrar nova carta</h3><form id="form-carta" class="form-grid">
+                <div class="wide carta-campo-autocomplete">
+                  <label for="carta-funcionario">Colaborador</label>
+                  <div class="carta-autocomplete-relativo"><input id="carta-funcionario" autocomplete="off" required placeholder="Nome do colaborador" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-funcionario" aria-expanded="false"><div id="carta-sugestoes-funcionario" class="carta-sugestoes" role="listbox" hidden></div></div>
+                </div>
+                <p class="wide carta-empresa-identificada" id="carta-empresa-info" role="status" aria-live="polite">Selecione um colaborador cadastrado para identificar a empresa.</p>
+                <label>Data da ocorrência <input id="carta-ocorrencia" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA" required></label>
+                <label>Data de conferência / correção <input id="carta-correcao" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="DD/MM/AAAA"></label>
+                <small class="wide carta-dica-data">Os campos de data podem ser alterados. Se o ano for digitado como 26, será ajustado para 2026.</small>
+                <div class="carta-campo-autocomplete">
+                  <label for="carta-responsavel">Entregue ao responsável</label>
+                  <div class="carta-autocomplete-relativo"><input id="carta-responsavel" autocomplete="off" placeholder="Ex.: PEDRINHO" role="combobox" aria-autocomplete="list" aria-controls="carta-sugestoes-responsavel" aria-expanded="false"><div id="carta-sugestoes-responsavel" class="carta-sugestoes" role="listbox" hidden></div></div>
+                  <small id="carta-responsavel-aprendizado" class="carta-aprendizado" aria-live="polite" hidden></small>
+                </div>
+                <label>Assinado <select id="carta-assinado"><option value="NÃO">NÃO</option><option value="SIM">SIM</option></select></label>
+                <label class="wide">Observações / adicional <textarea id="carta-obs" rows="2" maxlength="2000" placeholder="Informações complementares"></textarea></label>
+                <div class="wide carta-form-acoes"><button class="btn primary" type="submit" id="btn-salvar-carta">Salvar carta</button><button class="btn subtle" type="button" id="btn-cancelar-edicao-carta" hidden>Cancelar edição</button></div>
+                <div class="wide tm-fila-cartas" id="tm-fila-cartas" role="status" aria-live="polite" hidden></div>
+              </form></div>
+              <div class="panel tm-resumo-cartas"><h3>Resumo das cartas</h3><div class="mini-metrics"><div><strong id="cartas-total">0</strong><span>Registradas</span></div><div><strong id="cartas-pendentes">0</strong><span>Sem assinatura</span></div><div><strong id="cartas-assinadas">0</strong><span>Assinadas</span></div></div>
+              <section class="tm-avisos-cartas" aria-label="Ações dos encarregados">
+                <div class="tm-avisos-cabecalho"><h4>Ações dos encarregados</h4><span class="tm-avisos-contador" id="tm-total-acoes-cartas">0</span></div>
+                <div class="tm-avisos-colunas" aria-hidden="true"><span>Colaborador / carta</span><span>Marcado por</span><span>Status</span></div>
+                <div id="tm-lista-acoes-cartas" class="tm-avisos-lista" aria-live="polite"><p class="empty">Carregando movimentações…</p></div>
+              </section>
+            </div>
+            </div>
+            <div class="panel"><div class="panel-top"><h3>Histórico e controle</h3><div class="filter-row"><input type="search" id="filtro-cartas" placeholder="Buscar nome ou responsável…"><select id="filtro-cartas-status"><option value="">Todos os status</option><option value="NÃO">Não assinadas</option><option value="SIM">Assinadas</option></select><input type="month" id="filtro-cartas-mes" aria-label="Mês das cartas"><button class="btn subtle" id="limpar-filtro-cartas" type="button">Limpar</button></div></div><div class="table-scroll"><table class="tabela-cartoes"><thead><tr><th>Ocorrência</th><th>Colaborador</th><th>Entregue ao responsável</th><th>Correção</th><th>Assinado</th><th>Observações</th><th>Ações</th></tr></thead><tbody id="tbody-cartas"></tbody></table></div></div>
+          </div>
+
+          <div class="subpage" id="sub-capa">
+            <div class="section-header"><div><h3>Selecionar cartas não assinadas</h3><p>Apenas cartas com status <strong>NÃO</strong> aparecem para seleção e impressão. Cartas já assinadas não entram na capa.</p></div><div class="actions"><button class="btn subtle" id="selecionar-visiveis" type="button">Selecionar visíveis</button><button class="btn subtle" id="limpar-selecao" type="button">Limpar seleção</button><button class="btn primary" id="imprimir-capa" type="button">Imprimir capa (<span id="total-selecionadas">0</span>)</button></div></div>
+            <div class="panel"><div class="filter-row mb"><input type="search" id="filtro-capa" placeholder="Buscar colaborador ou responsável…"><input type="month" id="filtro-capa-mes" aria-label="Filtrar mês"></div><div class="table-scroll"><table><thead><tr><th class="check-col"><input id="check-todas-capa" type="checkbox" aria-label="Selecionar todas as visíveis"></th><th>Ocorrência</th><th>Colaborador</th><th>Responsável</th><th>Correção</th><th>Assinado</th></tr></thead><tbody id="tbody-capa"></tbody></table></div></div>
+          </div>
+
+          <div class="subpage" id="sub-relatorios">
+            <div class="section-header"><div><h3>Quantidade de cartas por funcionário</h3><p>Ranking das ocorrências de correção de ponto, com nomes destacados e gráfico compacto. Não equivale necessariamente a faltas ao trabalho.</p></div><div class="filter-row"><label class="inline-label" for="filtro-relatorio-mes">Período</label><input type="month" id="filtro-relatorio-mes"><button class="btn subtle" id="relatorio-todos" type="button">Todo o período</button></div></div>
+            <div class="report-actions"><button class="btn secondary" type="button" id="compartilhar-ranking">Compartilhar imagem do ranking</button><button class="btn subtle" type="button" id="baixar-ranking">Baixar PNG do ranking</button></div>
+            <div class="report-grid">
+              <div class="panel"><h3 id="titulo-ranking">Ranking de colaboradores</h3><div class="table-scroll"><table><thead><tr><th>Pos.</th><th>Colaborador</th><th>Cartas</th></tr></thead><tbody id="tbody-ranking"></tbody></table></div></div>
+              <div class="panel"><h3 id="titulo-barras">QUANTIDADE DE CARTAS DE PONTO POR FUNCIONÁRIO</h3><div class="bar-chart" id="grafico-barras" role="img" aria-label="Gráfico de barras horizontais com a contagem de cartas por funcionário"></div></div>
+            </div>
+            <div class="panel pie-panel"><h3>Percentual de cartas por responsável</h3><div class="pie-container"><div id="grafico-pizza" class="pie-chart" role="img" aria-label="Gráfico de pizza da porcentagem de cartas por responsável"></div><div id="legenda-pizza" class="pie-legend"></div></div><p class="footnote">Assim como o gráfico de pizza do Excel, os valores são apresentados em porcentagem. Registros sem responsável são exibidos separadamente, sem serem atribuídos a outra pessoa.</p></div>
+          </div>
+
+          <div class="subpage" id="sub-resumo">
+            <div class="section-header"><div><h3>Resumo de horas e folgas — para o grupo</h3><p>O resumo considera os últimos três meses sincronizados. No mês atual, considera até ontem quando a leitura permite o corte diário. Sem filtro manual.</p></div><div class="actions"><button type="button" class="btn primary" id="compartilhar-resumo">Compartilhar imagem</button><button type="button" class="btn secondary" id="baixar-resumo">Baixar PNG</button></div></div>
+            <div class="panel">
+              <div class="resumo-filtros">
+                <label>Empresa <select id="resumo-empresa"><option value="">Todas as empresas</option></select></label>
+                <label>Buscar nome <input id="resumo-busca" type="search" placeholder="Nome do funcionário"></label>
+              </div>
+              <div class="resumo-periodo-fixo" id="resumo-periodo-automatico" role="status">Período de referência: calculando…</div>
+              <div class="aviso-corte" id="aviso-corte-resumo" role="status"></div>
+              <div class="relatorio-resumo-cabecalho"><h3 id="resumo-titulo-meses">Banco dos últimos 3 meses</h3><span id="resumo-atualizado" class="muted"></span></div>
+              <div class="table-scroll" tabindex="0" role="region" aria-label="Resumo de banco de horas e equivalência em folgas">
+                <table class="tabela-resumo-grupo tabela-cartoes"><thead><tr><th>FUNCIONÁRIO</th><th id="resumo-mes-2">Mês -2</th><th id="resumo-mes-1">Mês -1</th><th id="resumo-mes-0">Mês atual</th><th id="resumo-total-titulo">BANCO NO PERÍODO</th><th>DIAS EQUIVALENTES*</th></tr></thead><tbody id="tbody-resumo-grupo"><tr><td colspan="6" class="empty">Carregando saldos…</td></tr></tbody></table>
+              </div>
+              <p class="footnote"><b>*Dias equivalentes (regra do Excel):</b> some os saldos dos três meses sincronizados; arredonde os minutos do total para horas inteiras (30 minutos ou mais arredondam a hora para cima); divida pela jornada de 07:20, exceto os três funcionários cadastrados com jornada 08:48; depois arredonde a fração de dia (0,5 ou mais sobe). Saldos negativos ou nulos resultam em 0 dia disponível; se faltar algum mês, exibimos um traço, nunca zero inventado. A equivalência em dias é apenas uma simulação, sujeita à conferência e aprovação. <b>Atenção:</b> o período de 01 até ontem é uma referência visual do mês mais recente; os valores são os saldos mensais da última sincronização, sem recorte diário. Compensações e prescrições serão configuradas em outra etapa.</p>
+            </div>
+          </div>
+          <div class="subpage" id="sub-banco">
+            <div class="section-header">
+              <div><h3>Banco de Horas</h3><p>Consulte o demonstrativo mensal dos funcionários ativos e ex-funcionários arquivados, no formato do MobPonto, sem alterar o ponto ou seus saldos.</p></div>
+            </div>
+            <div class="panel eb-filtros">
+              <div class="eb-filtros-linha">
+                <label>Empresa<select id="eb-empresa"><option value="">Todas as empresas</option></select></label>
+                <label>Ano inicial<input id="eb-ano-inicial" type="number" min="2000" max="2100" step="1" aria-label="Ano inicial do extrato"></label>
+                <label>Ano final<input id="eb-ano-final" type="number" min="2000" max="2100" step="1" aria-label="Ano final do extrato"></label>
+              </div>
+              <div class="eb-selecao-cabecalho">
+                <div><strong>Selecionar funcionários</strong><small>Escolha 1, vários ou todos os funcionários da empresa selecionada.</small></div>
+                <span id="eb-contador" aria-live="polite">0 selecionados</span>
+              </div>
+              <div class="eb-controles">
+                <input id="eb-busca" type="search" placeholder="Buscar funcionário..." aria-label="Buscar funcionário">
+                <button class="btn subtle" type="button" id="eb-selecionar-todos">Selecionar todos</button>
+                <button class="btn subtle" type="button" id="eb-limpar">Limpar seleção</button>
+              </div>
+              <div id="eb-lista" class="eb-lista" role="group" aria-label="Funcionários disponíveis"><p class="empty">Carregando funcionários...</p></div>
+              <div class="eb-acoes">
+                <button id="eb-carregar" class="btn primary" type="button">Carregar bancos de horas</button>
+                <button id="eb-csv" class="btn secondary" type="button" disabled>Exportar CSV</button>
+                <button id="eb-imprimir" class="btn secondary" type="button" disabled>Imprimir / PDF</button>
+              </div>
+              <p class="footnote">A consulta utiliza os dados registrados nas leituras do MobPonto e a sincronização mais recente. Não faz abatimentos ou pagamentos. Os meses sem leitura aparecerão como <b>SEM DADOS</b>. Selecione até 6 anos consecutivos; a consulta não inicia uma nova captura do MobPonto.</p>
+            </div>
+            <div id="eb-estado" class="eb-estado" role="status" aria-live="polite">Selecione os funcionários e clique em Carregar bancos de horas.</div>
+            <div id="eb-resultados" class="eb-resultados" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="sec-pendentes" class="page"><div class="section-header"><div><h2>Controle de cartas do encarregado</h2><p id="descricao-cartas-pendentes">Registre assinaturas e pedidos de reimpressão para seu controle. Somente o administrador confirma ou altera as cartas oficiais.</p></div><button class="btn secondary" id="btn-recarregar-pendentes">Atualizar</button></div>
+          <div class="panel">
+            <div class="tm-pendentes-filtros tm-pendentes-filtros-v2" role="search" aria-label="Pesquisar e ordenar cartas de ponto">
+              <div class="tm-pendente-campo tm-pendente-busca">
+                <label for="busca-cartas-pendentes">Buscar por nome</label>
+                <div class="tm-pendente-busca-caixa">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                  <input id="busca-cartas-pendentes" type="search" placeholder="Digite o nome do colaborador" autocomplete="off" aria-controls="lista-pendentes">
+                </div>
+              </div>
+              <div class="tm-pendente-campo tm-pendente-status">
+                <label for="filtro-controle-enc">Exibir cartas</label>
+                <select id="filtro-controle-enc"><option value="PENDENTE">Ainda pendentes / reimpressão</option><option value="ASSINADA">Assinadas</option><option value="TODAS">Todas</option></select>
+              </div>
+              <div class="tm-pendente-campo tm-pendente-ordem">
+                <label for="ordenar-cartas-pendentes">Ordenar por</label>
+                <select id="ordenar-cartas-pendentes">
+                  <option value="DATA_ASC">Data: mais antiga primeiro</option>
+                  <option value="DATA_DESC">Data: mais nova primeiro</option>
+                  <option value="NOME_ASC">Nome: A–Z</option>
+                  <option value="NOME_DESC">Nome: Z–A</option>
+                </select>
+              </div>
+            </div>
+            <p class="tm-pendentes-contador" id="contador-cartas-pendentes" aria-live="polite" aria-atomic="true"></p>
+            <div id="lista-pendentes" class="pending-list"></div>
+          </div>
+        </section>
+        <section id="sec-usuarios" class="page" data-admin aria-labelledby="titulo-usuarios">
+          <div class="section-header">
+            <div><h2 id="titulo-usuarios" class="sr-only">Gerenciar usuários</h2><p>Os cadastros só recebem acesso após a confirmação do e-mail e sua aprovação.</p></div>
+            <button class="btn secondary" type="button" id="btn-atualizar-usuarios">Atualizar solicitações</button>
+          </div>
+          <div class="tm-usuarios-resumo" aria-live="polite">
+            <div class="tm-usuarios-stat"><span>Aguardando aprovação</span><strong id="quantidade-usuarios-pendentes">0</strong></div>
+            <div class="tm-usuarios-stat"><span>Contas ativas</span><strong id="quantidade-usuarios-ativos">0</strong></div>
+          </div>
+          <div class="panel tm-usuarios-painel">
+            <h3>Solicitações pendentes</h3>
+            <div id="usuarios-pendentes" class="tm-usuarios-lista" aria-live="polite"><p class="empty">Carregando solicitações…</p></div>
+          </div>
+          <div class="panel tm-usuarios-painel">
+            <h3>Usuários com acesso</h3>
+            <p class="tm-usuarios-nota">Cadastros novos começam como Encarregado. O administrador pode alterar o perfil de contas ativas; a mudança exige um novo login.</p>
+            <div id="usuarios-ativos" class="tm-usuarios-lista"><p class="empty">Carregando usuários…</p></div>
+          </div>
+          <details class="panel tm-usuarios-recusados"><summary>Solicitações recusadas (<span id="quantidade-usuarios-recusados">0</span>)</summary>
+            <div id="usuarios-recusados" class="tm-usuarios-lista"><p class="empty">Nenhuma solicitação recusada.</p></div>
+          </details>
+        </section>
+        <datalist id="lista-funcionarios"></datalist><datalist id="lista-responsaveis"></datalist>
+      </main>
+    </div>
+  </div>
+  <script src="ponto.js?v=31.13.4"></script>
+</body>
+</html>
