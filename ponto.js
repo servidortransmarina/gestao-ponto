@@ -2519,7 +2519,7 @@ async function ebCarregarOpcoes(){
       .forEach(e=>selecao.add(new Option(e,e)));
     if([...selecao.options].some(o=>o.value===atual))selecao.value=atual;
     EB.opcoesCarregadas=true;ebRenderLista();
-    $('eb-estado').textContent=EB.pessoas.length+' funcionário(s) no cadastro/histórico. Selecione os que deseja consultar.';
+    $('eb-estado').textContent=EB.pessoas.length+' vínculo(s) ativo(s) no cadastro. Histórico de empresas anteriores não é exibido.';
   }catch(e){$('eb-estado').textContent='Erro ao carregar funcionários: '+e.message;throw e;}
   finally{EB.carregandoOpcoes=false;}
 }
@@ -2533,10 +2533,10 @@ function ebSelecionarTodos(){
 function ebMinutos(v){const m=String(v||'').match(/^([+-]?)(\d{1,5}):([0-5]\d)$/);return m?(m[1]==='-'?-1:1)*(Number(m[2])*60+Number(m[3])):null;}
 function ebFormatarMinutos(n,sinal=false){if(!Number.isFinite(n))return '—';const z=Math.abs(n);return (n<0?'-':sinal&&n>0?'+':'')+String(Math.floor(z/60)).padStart(2,'0')+':'+String(z%60).padStart(2,'0');}
 function ebSomarCampo(meses,campo,sinal){
-  // Não apresentar como integral um total com competências faltantes.
-  const valores=meses.map(r=>ebMinutos(r[campo]));
-  if(valores.some(v=>v===null))return '—';
-  return ebFormatarMinutos(valores.reduce((a,b)=>a+b,0),sinal);
+  // Soma apenas dados realmente válidos dentro do vínculo atual; meses
+  // anteriores à admissão e respostas ausentes nunca viram zero fictício.
+  const valores=meses.filter(r=>!r.foraDoVinculo).map(r=>ebMinutos(r[campo])).filter(v=>v!==null);
+  return valores.length?ebFormatarMinutos(valores.reduce((a,b)=>a+b,0),sinal):'—';
 }
 function ebClasseSaldo(s){return s.startsWith('-')?'eb-negativo':s.startsWith('+')?'eb-positivo':s==='SEM DADOS'?'eb-sem-dados':'';}
 function ebDataLeitura(valor){
@@ -2549,17 +2549,23 @@ function ebTabelaHTML(extrato){
     const campos=['previsto','trabalhado','extra','extraFds','adn','saldo'];
     // Avisos de auditoria não integram o demonstrativo apresentado/impresso.
     // As versões e a indicação houveAlteracao continuam preservadas no backend.
+    if(r.foraDoVinculo)return '<tr><td>'+esc(mes)+'</td>'+campos.map(()=>'<td class="eb-sem-dados">—</td>').join('')+
+      '<td class="eb-anotacao-vazia">Anterior à admissão no vínculo atual</td></tr>';
     return '<tr><td>'+esc(mes)+'</td>'+campos.map(c=>'<td class="'+ebClasseSaldo(r[c])+'">'+esc(r[c]||'SEM DADOS')+'</td>').join('')+
       '<td class="'+(r.anotacao?'':'eb-anotacao-vazia')+'"'+(r.anotacaoCapturadaEm?
       ' title="Anotação arquivada em '+esc(ebDataLeitura(r.anotacaoCapturadaEm))+'"':'')+'>'+esc(r.anotacao||'Sem anotação arquivada')+'</td></tr>';
   }).join('');
   const soma=['previsto','trabalhado','extra','extraFds','adn','saldo'].map((c,i)=>'<td>'+esc(ebSomarCampo(extrato.meses,c,i>=2&&i!==4))+'</td>').join('');
-  const parciais=extrato.meses.some(r=>['previsto','trabalhado','extra','extraFds','adn','saldo'].some(k=>ebMinutos(r[k])===null));
+  const parciais=extrato.meses.some(r=>!r.foraDoVinculo&&
+    ['previsto','trabalhado','extra','extraFds','adn','saldo'].some(k=>ebMinutos(r[k])===null));
+  const primeiroVinculo=extrato.admissao?'Admissão neste vínculo: '+ebDataLeitura(extrato.admissao):
+    'Data de admissão não informada pelo MobPonto; confirme antes de usar os totais';
   return '<article class="eb-extrato"><header><div><span class="eb-kicker">TRANSMARINA / BANCO DE HORAS — REFERÊNCIA HISTÓRICA</span><h4>'+esc(extrato.nome)+
-    '</h4><span class="eb-empresa">'+esc(extrato.empresa)+'</span></div><span class="eb-etiqueta">Período '+
+    '</h4><span class="eb-empresa">'+esc(extrato.empresa)+' — '+esc(primeiroVinculo)+'</span></div><span class="eb-etiqueta">Período '+
     esc(extrato.anoInicial===extrato.anoFinal?String(extrato.anoInicial):extrato.anoInicial+'–'+extrato.anoFinal)+'</span></header>'+
     '<div class="eb-tabela-wrap"><table class="eb-tabela"><thead><tr><th>Mês/Ano</th><th>Horas a trabalhar<br>no mês</th><th>Horas<br>trabalhadas</th><th>Extra<br>Seg–Sáb</th><th>Extra<br>Dom/Fer</th><th>Adicional<br>noturno</th><th>Saldo<br>banco</th><th>Anotação</th></tr></thead><tbody>'+linhas+
-    '<tr class="eb-total"><td>SOMA DO HISTÓRICO'+(parciais?' (parcial)':'')+'</td>'+soma+'<td>—</td></tr></tbody></table></div></article>';
+    '<tr class="eb-total"><td>SOMA DO VÍNCULO ATUAL'+(parciais?' (parcial)':'')+'</td>'+soma+'<td>—</td></tr></tbody></table></div>'+
+    '<p class="eb-resumo-aviso">Soma dos meses com leitura no vínculo atual; não é o saldo disponível para folgas.</p></article>';
 }
 async function ebCarregar(){
   const emp=$('eb-empresa').value;
@@ -2578,7 +2584,7 @@ async function ebCarregar(){
     $('eb-estado').textContent=EB.extratos.length+' extrato(s) carregado(s) — '+
       (anoInicial===anoFinal?anoInicial:anoInicial+'–'+anoFinal)+'. '+
       (mesesSem?mesesSem+' competência(s) sem leitura. ':'')+
-      'Horas de meses fechados são preservadas da primeira leitura. Anotações exibem a última informação arquivada de cada mês.';
+      'Só o vínculo atual entra na soma; meses anteriores à admissão ficam fora. Descrições das anotações são literais, quando disponíveis.';
     $('eb-csv').disabled=!EB.extratos.length;$('eb-imprimir').disabled=!EB.extratos.length;
   }catch(e){$('eb-estado').textContent='Não foi possível carregar: '+e.message;throw e;}
   return true;
@@ -2587,11 +2593,11 @@ function ebCSV(){
   if(!EB.extratos.length)throw Error('Carregue os extratos primeiro.');
   const colunas=['Empresa','Funcionário','Ano','Mês/Ano','Horas a trabalhar','Horas trabalhadas','Extra Seg-Sáb',
     'Extra Dom/Fer','Adicional noturno','Saldo de referência histórica','Anotação','Situação',
-    'Fonte','Data da primeira leitura','Extra Seg-Sáb na última leitura','Saldo na última leitura','Alteração após referência','Tipo de referência', 'Anotação arquivada em', 'Origem da anotação'];
+    'Fonte','Data da primeira leitura','Extra Seg-Sáb na última leitura','Saldo na última leitura','Alteração após referência','Tipo de referência', 'Anotação arquivada em', 'Origem da anotação', 'Admissão vínculo atual'];
   const linhas=[colunas];
   EB.extratos.forEach(e=>e.meses.forEach(r=>linhas.push([e.empresa,e.nome,r.mes.slice(3),r.mes,r.previsto,r.trabalhado,
     r.extra,r.extraFds,r.adn,r.saldo,r.anotacao||'Sem anotação arquivada',r.situacao,r.origem,
-    r.referenciaEm||'',r.extraAtual||'',r.saldoAtual||'',r.houveAlteracao?'SIM':'NÃO',r.modoLeitura||'SEM LEITURA',r.anotacaoCapturadaEm||'',r.anotacaoOrigem||''])));
+    r.referenciaEm||'',r.extraAtual||'',r.saldoAtual||'',r.houveAlteracao?'SIM':'NÃO',r.modoLeitura||'SEM LEITURA',r.anotacaoCapturadaEm||'',r.anotacaoOrigem||'',e.admissao||''])));
   const txt='\ufeffsep=;\r\n'+linhas.map(r=>r.map(ebCSVSeguro).join(';')).join('\r\n');
   const periodo=EB.resultado.anoInicial===EB.resultado.anoFinal?String(EB.resultado.anoInicial):
     EB.resultado.anoInicial+'-'+EB.resultado.anoFinal;
